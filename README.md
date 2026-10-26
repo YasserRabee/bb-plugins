@@ -26,8 +26,12 @@ cd plugins && bb plugin new <name> && mv bb-plugin-<name> <name>
 Then add `{ "name": "<name>", "source": "./plugins/<name>" }` to
 `.bb/plugins.json` and a row to the table above.
 
-## Install from git (once pushed)
+## Install
 
 ```sh
-bb plugin install git:<repo-url>@master --plugin <name>
+bb plugin install git:https://github.com/YasserRabee/bb-plugins.git@master --plugin checklist
 ```
+
+## License
+
+[MIT](LICENSE)

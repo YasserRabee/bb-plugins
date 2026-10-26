@@ -52,5 +52,11 @@
     "build": "bb plugin build",
     "test": "node --test server.test.ts",
     "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YasserRabee/bb-plugins.git",
+    "directory": "plugins/checklist"
   }
 }
