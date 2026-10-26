@@ -6,7 +6,8 @@ progress pill update over realtime.
 
 - `server.ts` — the `todo_write` tool, kv storage keyed by thread id, the
   `checklist_get` RPC, and the `checklist-changed` realtime signal.
-- `app.tsx` — the fixed thread tab and the thread header progress pill.
+- `app.tsx` — the fixed thread tab, the header progress pill, and a
+  composer banner pinned above the input box.
 - `skills/checklist/SKILL.md` — tool and UI notes injected into threads.
 
 ```sh
