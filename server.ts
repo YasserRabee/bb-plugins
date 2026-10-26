@@ -22,7 +22,9 @@ export const todoWriteParameters = z.object({
 export const rpcContract = defineRpcContract({
   checklist_get: {
     input: z.object({ threadId: z.string().min(1).max(200) }),
-    output: z.object({ todos: z.array(todoSchema) }),
+    // `pinned` drives the banner above the composer: a fully completed list
+    // stays pinned until the thread's next turn starts.
+    output: z.object({ todos: z.array(todoSchema), pinned: z.boolean() }),
   },
 });
 
@@ -30,6 +32,7 @@ export const rpcContract = defineRpcContract({
 export const CHECKLIST_CHANGED = "checklist-changed";
 
 const key = (threadId: string) => `list:${threadId}`;
+const unpinnedKey = (threadId: string) => `unpinned:${threadId}`;
 
 export function summarize(todos: Todo[]): string {
   if (todos.length === 0) return "Checklist cleared.";
@@ -64,16 +67,32 @@ export default async function plugin(bb: BbPluginApi) {
     async execute({ todos }, { threadId }) {
       if (todos.length === 0) await bb.storage.kv.delete(key(threadId));
       else await bb.storage.kv.set(key(threadId), todos);
+      await bb.storage.kv.delete(unpinnedKey(threadId));
       bb.realtime.publish(CHECKLIST_CHANGED, { threadId });
       return summarize(todos);
     },
   });
 
+  // ponytail: "next turn" = thread.active, so any turn (a user prompt, or a
+  // subthread report waking it) unpins a finished list; SDK has no prompt event.
+  bb.events.on("thread.active", async ({ thread }) => {
+    const todos = await readList(thread.id);
+    if (todos.length === 0 || todos.some((todo) => todo.status !== "completed")) {
+      return;
+    }
+    await bb.storage.kv.set(unpinnedKey(thread.id), true);
+    bb.realtime.publish(CHECKLIST_CHANGED, { threadId: thread.id });
+  });
+
   bb.events.on("thread.deleted", async ({ thread }) => {
     await bb.storage.kv.delete(key(thread.id));
+    await bb.storage.kv.delete(unpinnedKey(thread.id));
   });
 
   bb.rpc.register(rpcContract, {
-    checklist_get: async ({ threadId }) => ({ todos: await readList(threadId) }),
+    checklist_get: async ({ threadId }) => ({
+      todos: await readList(threadId),
+      pinned: !(await bb.storage.kv.get<boolean>(unpinnedKey(threadId))),
+    }),
   });
 }

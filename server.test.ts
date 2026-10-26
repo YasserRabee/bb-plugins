@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin, { MAX_TODOS } from "./server.ts";
 
 test("todo_write validates, replaces per thread, and publishes", async () => {
@@ -8,9 +8,13 @@ test("todo_write validates, replaces per thread, and publishes", async () => {
   await plugin(bb);
   const write = (todos: unknown, threadId = "t1") =>
     harness.behavior.callAgentTool("todo_write", { todos }, { threadId });
-  const get = async (threadId: string) =>
-    ((await harness.behavior.callRpc("checklist_get", { threadId })) as any)
-      .todos;
+  const read = async (threadId: string) =>
+    (await harness.behavior.callRpc("checklist_get", { threadId })) as any;
+  const get = async (threadId: string) => (await read(threadId)).todos;
+  const turnStarts = (id: string) =>
+    harness.behavior.emitThreadEvent("thread.active", {
+      thread: makeThreadResponse({ id }),
+    });
 
   assert.equal(
     await write([
@@ -26,6 +30,16 @@ test("todo_write validates, replaces per thread, and publishes", async () => {
   assert.deepEqual(await get("t1"), [{ content: "Ship", status: "completed" }]);
   assert.equal((await get("t2")).length, 1);
   assert.equal(harness.realtimeSignals.length, 3);
+
+  // A finished list stays pinned until the next turn; unfinished ones stay put.
+  assert.equal((await read("t1")).pinned, true);
+  await turnStarts("t2");
+  assert.equal((await read("t2")).pinned, true);
+  await turnStarts("t1");
+  assert.equal((await read("t1")).pinned, false);
+  assert.equal((await get("t1")).length, 1); // the tab still has it
+  await write([{ content: "Next", status: "pending" }]);
+  assert.equal((await read("t1")).pinned, true);
 
   // Bad input is rejected and leaves the stored list alone.
   for (const bad of [

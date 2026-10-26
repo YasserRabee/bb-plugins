@@ -7,8 +7,8 @@ Desktop's todo list.
   agent sends the whole list each time it plans or finishes a step.
 - A **Checklist** tab on each thread showing pending, in-progress, and done
   items, updating live.
-- The list pinned above the input box while work is unfinished, collapsible
-  to one line showing the current step.
+- The list pinned above the input box, collapsible to one line showing the
+  current step. A finished list stays until your next prompt.
 - A `done/total` pill in the thread header that opens the tab.
 
 ## How it works

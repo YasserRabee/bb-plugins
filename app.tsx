@@ -26,11 +26,13 @@ const TAB = {
 function useChecklist(threadId: string) {
   const rpc = useRpc<typeof rpcContract>();
   const [todos, setTodos] = useState<Todo[] | null>(null);
+  const [pinned, setPinned] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refetch = useCallback(() => {
     rpc.call("checklist_get", { threadId }).then(
       (result) => {
         setTodos(result.todos);
+        setPinned(result.pinned);
         setError(null);
       },
       (cause: unknown) =>
@@ -43,7 +45,7 @@ function useChecklist(threadId: string) {
       refetch();
     }
   });
-  return { todos, error };
+  return { todos, pinned, error };
 }
 
 const STATUS_ICON = {
@@ -115,16 +117,14 @@ function TodoList({ todos }: { todos: Todo[] }) {
   );
 }
 
-// Pinned above the thread's composer while any item is unfinished, like
-// Claude's todo list; it disappears once everything is done.
+// Pinned above the thread's composer like Claude's todo list. A finished list
+// stays until the thread's next turn starts (the server then unpins it).
 function ComposerChecklist() {
   const { scope } = useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : "";
-  const { todos } = useChecklist(threadId);
+  const { todos, pinned } = useChecklist(threadId);
   const [open, setOpen] = useState(true);
-  if (todos === null || todos.every((todo) => todo.status === "completed")) {
-    return null;
-  }
+  if (todos === null || todos.length === 0 || !pinned) return null;
   const done = todos.filter((todo) => todo.status === "completed").length;
   const active = todos.find((todo) => todo.status === "in_progress");
   return (
@@ -140,7 +140,11 @@ function ComposerChecklist() {
           {done}/{todos.length}
         </span>
         <span className="min-w-0 flex-1 truncate">
-          {open ? "Checklist" : (active?.activeForm ?? active?.content ?? "Checklist")}
+          {open
+            ? "Checklist"
+            : (active?.activeForm ??
+              active?.content ??
+              (done === todos.length ? "All done" : "Checklist"))}
         </span>
         <Icon name={open ? "ChevronDown" : "ChevronRight"} className="size-3.5 shrink-0" />
       </button>
