@@ -26,6 +26,12 @@ export type Profile = z.infer<typeof profileSchema>;
  */
 export function normalizeToken(raw: string): string {
   const token = raw.replace(/\s+/g, "");
+  if (!token.startsWith("sk-ant-") && token.includes("#")) {
+    throw new Error(
+      "That is the browser's one-time authentication code, not the token. Paste it " +
+        "into the terminal running `claude setup-token`; it then prints the sk-ant-oat01- token.",
+    );
+  }
   if (!/^sk-ant-oat\d+-[A-Za-z0-9_-]{20,}$/.test(token)) {
     throw new Error(
       "That isn't a whole `claude setup-token` token: it starts with sk-ant-oat01-. " +

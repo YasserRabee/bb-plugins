@@ -71,4 +71,5 @@ test("helpers", () => {
   // Only the last wrapped line of a token, or an API key.
   assert.throws(() => normalizeToken(token.slice(13)), /sk-ant-oat01-/);
   assert.throws(() => normalizeToken("sk-ant-api03-abcdefghijklmnopqrstuvwxyz"));
+  assert.throws(() => normalizeToken("abcdefghijklmnop#qrstuvwxyz0123456789"), /authentication code/);
 });

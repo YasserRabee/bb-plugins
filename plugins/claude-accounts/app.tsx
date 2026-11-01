@@ -339,7 +339,7 @@ function ProfileForm({
       </Field>
       <Field
         label="OAuth token (optional)"
-        hint={initial?.hasToken ? "A token is stored. Paste a new one to replace it." : "From `claude setup-token`, starting sk-ant-oat01-. Stored on the bb server, never shown again."}
+        hint={initial?.hasToken ? "A token is stored. Paste a new one to replace it." : "The sk-ant-oat01- token `claude setup-token` prints in the terminal (not the browser code). Stored on the bb server, never shown again."}
       >
         <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
       </Field>
