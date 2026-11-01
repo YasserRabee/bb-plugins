@@ -6,6 +6,7 @@ Yasser's custom bb plugins. Each plugin lives in `plugins/<name>/` with its own
 | Plugin | What it does |
 | --- | --- |
 | [checklist](plugins/checklist) | A live per-thread checklist the agent keeps with `todo_write`. |
+| [claude-accounts](plugins/claude-accounts) | Several Claude Code accounts: a default per project, an override per thread. |
 
 ## Work on a plugin
 

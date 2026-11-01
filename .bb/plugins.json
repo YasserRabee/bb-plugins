@@ -3,6 +3,7 @@
   "schemaVersion": 1,
   "name": "yasser-bb-plugins",
   "plugins": [
-    { "name": "checklist", "source": "./plugins/checklist" }
+    { "name": "checklist", "source": "./plugins/checklist" },
+    { "name": "claude-accounts", "source": "./plugins/claude-accounts" }
   ]
 }
