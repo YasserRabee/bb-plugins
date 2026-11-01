@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.ts";
 
-const TOKEN = "sk-ant-oat01-secret-value";
+const TOKEN = "sk-ant-oat01-secret-value-0123456789";
 
 function setup() {
   const metadata = new Map<string, Record<string, unknown>>();

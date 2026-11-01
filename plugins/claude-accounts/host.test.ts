@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { checkProfile, ensureTokenWrapper, migrateTranscript } from "./host.ts";
-import { expandHome, slugify } from "./resolve.ts";
+import { expandHome, normalizeToken, slugify } from "./resolve.ts";
 
 test("migrateTranscript copies one session, never clobbering a newer copy", async () => {
   const root = await mkdtemp(join(tmpdir(), "claude-accounts-"));
@@ -66,4 +66,9 @@ test("helpers", () => {
   assert.equal(slugify("My Work Account!"), "my-work-account");
   assert.equal(slugify("system"), "account-system");
   assert.equal(slugify("!!!"), "account-1");
+  const token = "sk-ant-oat01-abcdefghij_KLMNOPQRST-0123456789";
+  assert.equal(normalizeToken(` ${token.slice(0, 30)}\n${token.slice(30)}\n`), token);
+  // Only the last wrapped line of a token, or an API key.
+  assert.throws(() => normalizeToken(token.slice(13)), /sk-ant-oat01-/);
+  assert.throws(() => normalizeToken("sk-ant-api03-abcdefghijklmnopqrstuvwxyz"));
 });

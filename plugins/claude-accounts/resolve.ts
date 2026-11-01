@@ -20,6 +20,21 @@ export const profileSchema = z.object({
 });
 export type Profile = z.infer<typeof profileSchema>;
 
+/**
+ * A `claude setup-token` token, with the line breaks a wrapped terminal adds
+ * removed. Throws (without echoing it) when it isn't a whole token.
+ */
+export function normalizeToken(raw: string): string {
+  const token = raw.replace(/\s+/g, "");
+  if (!/^sk-ant-oat\d+-[A-Za-z0-9_-]{20,}$/.test(token)) {
+    throw new Error(
+      "That isn't a whole `claude setup-token` token: it starts with sk-ant-oat01-. " +
+        "If the terminal wrapped it over several lines, copy all of them.",
+    );
+  }
+  return token;
+}
+
 export const threadChoiceSchema = z.object({
   profileId: z.string(),
   // Where the pinned value came from, for display.

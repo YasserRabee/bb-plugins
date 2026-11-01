@@ -20,6 +20,7 @@ import {
   SYSTEM_PROFILE,
   expandHome,
   initialChoice,
+  normalizeToken,
   profileIdSchema,
   profileSchema,
   slugify,
@@ -280,11 +281,12 @@ export default async function plugin(bb: BbPluginApi) {
       for (let n = 2; profiles.some((profile) => profile.id === id); n += 1) id = `${base}-${n}`;
     }
     const existing = profiles.find((profile) => profile.id === id);
-    if (input.token !== undefined) {
-      if (input.token === null) await kv.delete(`token:${id}`);
-      else await kv.set(`token:${id}`, input.token);
+    const token = typeof input.token === "string" ? normalizeToken(input.token) : input.token;
+    if (token !== undefined) {
+      if (token === null) await kv.delete(`token:${id}`);
+      else await kv.set(`token:${id}`, token);
     }
-    const hasToken = input.token === undefined ? (existing?.hasToken ?? false) : input.token !== null;
+    const hasToken = token === undefined ? (existing?.hasToken ?? false) : token !== null;
     if (input.configDir === null && !hasToken) {
       throw new Error("An account needs a config dir, a token, or both");
     }
