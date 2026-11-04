@@ -1,6 +1,6 @@
 // The RPC contract and data shapes shared by server.ts and app.tsx. Kept free
-// of server-only imports so the app bundle can import it as a value.
-import { defineRpcContract } from "@get-bb/plugin-sdk";
+// of server-only imports so the app bundle can import it as a value (a plain
+// object, not defineRpcContract: a managed install has no SDK root to bundle).
 import { z } from "zod";
 
 export const mergeRequestStateSchema = z.enum([
@@ -92,7 +92,7 @@ export type MergeMethod = (typeof MERGE_METHODS)[number];
 const actionInput = z.object({ environmentId: z.string().min(1).max(200) });
 const actionOutput = z.object({ mergeRequest: mergeRequestSchema });
 
-export const rpcContract = defineRpcContract({
+export const rpcContract = {
   /** Keyed read: one row per environment id (up to 200). */
   mergeRequests: {
     input: z.object({ keys: z.array(z.string().max(200)).max(200) }),
@@ -105,4 +105,4 @@ export const rpcContract = defineRpcContract({
     input: actionInput.extend({ method: z.enum(MERGE_METHODS).optional() }),
     output: actionOutput,
   },
-});
+} as const;
