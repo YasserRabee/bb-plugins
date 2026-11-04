@@ -3,6 +3,13 @@
   "schemaVersion": 1,
   "name": "yasser-bb-plugins",
   "plugins": [
-    { "name": "checklist", "source": "./plugins/checklist" }
+    {
+      "name": "checklist",
+      "source": "./plugins/checklist"
+    },
+    {
+      "name": "gitlab-mr-status",
+      "source": "./plugins/gitlab-mr-status"
+    }
   ]
 }
