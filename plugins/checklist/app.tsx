@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   definePluginApp,
   experimental_useAppPanel,
+  experimental_usePluginId,
   useRealtime,
   useComposer,
   useRpc,
@@ -117,16 +118,48 @@ function TodoList({ todos }: { todos: Todo[] }) {
   );
 }
 
+// The banner shows the step in progress and the next few; the tab has the rest.
+const UPCOMING = 3;
+
+// Each thread remembers whether its banner is open, in this browser only.
+function useOpenState(threadId: string, defaultOpen: boolean) {
+  const storageKey = `${experimental_usePluginId()}:open:${threadId}`;
+  const read = useCallback((): boolean | null => {
+    try {
+      const value = localStorage.getItem(storageKey);
+      return value === null ? null : value === "1";
+    } catch {
+      return null;
+    }
+  }, [storageKey]);
+  const [saved, setSaved] = useState(read);
+  useEffect(() => setSaved(read()), [read]);
+  const setOpen = (open: boolean) => {
+    setSaved(open);
+    try {
+      localStorage.setItem(storageKey, open ? "1" : "0");
+    } catch {
+      // Private mode or blocked storage: the choice lasts until reload.
+    }
+  };
+  return [saved ?? defaultOpen, setOpen] as const;
+}
+
 // Pinned above the thread's composer like Claude's todo list. A finished list
 // stays until the thread's next turn starts (the server then unpins it).
 function ComposerChecklist() {
   const { scope } = useComposer();
   const threadId = scope.kind === "thread" ? scope.threadId : "";
   const { todos, pinned } = useChecklist(threadId);
-  const [open, setOpen] = useState(true);
+  const panel = experimental_useAppPanel();
+  const done = todos?.filter((todo) => todo.status === "completed").length ?? 0;
+  const allDone = todos !== null && done === todos.length;
+  const [open, setOpen] = useOpenState(threadId, !allDone);
   if (todos === null || todos.length === 0 || !pinned) return null;
-  const done = todos.filter((todo) => todo.status === "completed").length;
   const active = todos.find((todo) => todo.status === "in_progress");
+  const remaining = todos.filter((todo) => todo.status !== "completed");
+  const shown = remaining.slice(0, (active ? 1 : 0) + UPCOMING);
+  const more = remaining.length - shown.length;
   return (
     <div className="text-sm">
       <button
@@ -135,22 +168,47 @@ function ComposerChecklist() {
         aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
       >
-        <Icon name="ListTodo" className="size-3.5 shrink-0" />
+        <Icon name={allDone ? "CircleCheck" : "ListTodo"} className="size-3.5 shrink-0" />
         <span className="tabular-nums">
           {done}/{todos.length}
         </span>
         <span className="min-w-0 flex-1 truncate">
-          {open
-            ? "Checklist"
-            : (active?.activeForm ??
-              active?.content ??
-              (done === todos.length ? "All done" : "Checklist"))}
+          {allDone
+            ? `All ${todos.length} done`
+            : open
+              ? "Checklist"
+              : (active?.activeForm ?? active?.content ?? "Checklist")}
         </span>
         <Icon name={open ? "ChevronDown" : "ChevronRight"} className="size-3.5 shrink-0" />
       </button>
       {open ? (
-        <div className="max-h-48 overflow-y-auto px-3 pb-2.5">
-          <TodoList todos={todos} />
+        <div className="space-y-1.5 px-3 pb-2.5">
+          {allDone ? (
+            <div className="max-h-48 overflow-y-auto">
+              <TodoList todos={todos} />
+            </div>
+          ) : (
+            <>
+              {done > 0 ? (
+                <p className="flex items-center gap-2 text-muted-foreground">
+                  <Icon name="CircleCheck" className="size-4 shrink-0" />
+                  {done} completed
+                </p>
+              ) : null}
+              <TodoList todos={shown} />
+              {more > 0 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    panel.experimental_openTab({ surface: { kind: "current" }, tab: TAB })
+                  }
+                  className="pl-6 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  +{more} more
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
     </div>

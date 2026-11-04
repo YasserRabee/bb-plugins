@@ -8,8 +8,9 @@ description: How the Checklist plugin's `todo_write` tool and thread Checklist t
 The Checklist plugin gives every thread one live checklist. The agent writes
 it with the `todo_write` tool; the user sees it in the thread's **Checklist**
 tab, as a `done/total` pill in the thread header, and pinned above the
-composer. A fully completed list stays pinned until the thread's next turn
-starts; the tab keeps it after that.
+composer. The pinned banner shows a completed count, the step in progress, and
+the next three; a fully completed list collapses to "All N done" and stays
+pinned until the thread's next turn starts. The tab always has the full list.
 
 ## The tool
 
@@ -21,7 +22,8 @@ starts; the tab keeps it after that.
 - Each call **replaces the whole list** for this thread. Always send every item.
 - Send `todos: []` to clear the list.
 - Limits: at most 50 items; `content` and `activeForm` are 1–300 characters.
-- Returns a short summary such as `3/7 done; now: Running tests`.
+- Returns a short summary such as `3/7 done; now: Running tests`, followed
+  by the list as `[x]` / `[>]` / `[ ]` lines while items remain.
 
 ## Rules
 
@@ -29,6 +31,9 @@ starts; the tab keeps it after that.
   Skip it for trivial one-step work.
 - Keep exactly one item `in_progress` while working.
 - Mark an item `completed` as soon as it is finished; don't batch updates.
+- After your context is compacted, send the list again with current statuses.
+  A compaction during a turn also brings an agent-only reminder with the list,
+  and a new or resumed session starts with the open list in its instructions.
 
 ## Constraints
 

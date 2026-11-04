@@ -5,14 +5,17 @@ replaces the thread's list); the thread's **Checklist** tab and a header
 progress pill update over realtime.
 
 - `server.ts` — the `todo_write` tool, kv storage keyed by thread id, the
-  `checklist_get` RPC, and the `checklist-changed` realtime signal.
+  `checklist_get` RPC, and the `checklist-changed` realtime signal. It also
+  keeps the agent on its list: `todo_write` returns the whole list, a new or
+  resumed session gets the open list in its instructions, and a compaction
+  during a turn steers the agent with an agent-only reminder.
 - `app.tsx` — the fixed thread tab, the header progress pill, and a
   composer banner pinned above the input box.
 - `skills/checklist/SKILL.md` — tool and UI notes injected into threads.
 
 ```sh
 npm install
-npm test           # tool validation + replace semantics
+npm test           # tool validation, replace semantics, compaction reminder
 npm run typecheck
 bb plugin build
 bb plugin install .
