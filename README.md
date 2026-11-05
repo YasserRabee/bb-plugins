@@ -6,6 +6,7 @@ Yasser's custom bb plugins. Each plugin lives in `plugins/<name>/` with its own
 | Plugin | What it does |
 | --- | --- |
 | [checklist](plugins/checklist) | A live per-thread checklist the agent keeps with `todo_write`. |
+| [marmalade](plugins/marmalade) | Orange theme: always-visible scrollbars, system/JetBrains Mono fonts, roomier spacing; configurable. |
 | [gitlab-mr-status](plugins/gitlab-mr-status) | GitLab merge request status for each thread: composer bar, context card, thread-row badge, `bb merge-request`. |
 
 ## Work on a plugin

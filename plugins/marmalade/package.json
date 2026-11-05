@@ -1,0 +1,47 @@
+{
+  "name": "bb-plugin-marmalade",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.47",
+    "bbPluginSdk": ">=0.6.79"
+  },
+  "bb": {
+    "name": "Marmalade",
+    "description": "A warm orange theme with always-visible 14px scrollbars, system UI and JetBrains Mono fonts, and roomier spacing.",
+    "branding": {
+      "icon": "Palette"
+    },
+    "server": "./server.ts",
+    "skills": [
+      "skills"
+    ],
+    "themes": [
+      {
+        "id": "marmalade",
+        "name": "Marmalade",
+        "description": "Orange accent, persistent scrollbars, roomy layout.",
+        "css": "./themes/marmalade.css"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "bb plugin build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.79",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "better-sqlite3": "^12.0.0",
+    "hono": "^4.11.9",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YasserRabee/bb-plugins.git",
+    "directory": "plugins/marmalade"
+  }
+}

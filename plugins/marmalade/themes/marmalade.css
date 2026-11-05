@@ -1,0 +1,86 @@
+/* Marmalade: orange accent, always-visible scrollbars, system UI + JetBrains
+   Mono, roomier spacing. All values are hard-coded. */
+
+:root {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --spacing: 0.275rem;
+}
+html { font-size: 106.667%; }
+
+:root,
+.light {
+  --primary: #f97316;
+  --primary-foreground: #1c1917;
+  --ring: #f97316;
+  --sidebar-primary: #f97316;
+  --sidebar-primary-foreground: #1c1917;
+  --sidebar-ring: #f97316;
+  --file-accent: #f97316;
+  --marmalade-thumb: color-mix(in oklab, var(--foreground) 28%, transparent);
+  --marmalade-track: color-mix(in oklab, var(--foreground) 5%, transparent);
+}
+
+.dark {
+  --primary: #f97316;
+  --primary-foreground: #1c1917;
+  --ring: #f97316;
+  --sidebar-primary: #f97316;
+  --sidebar-primary-foreground: #1c1917;
+  --sidebar-ring: #f97316;
+  --file-accent: #f97316;
+  /* Sampled from the reference screenshot: background #131313 (reference was #191919, darkened), body text
+     #eeeeee, secondary text ("Received message from", "Ran 1 command") #c8c8c8. */
+  --canvas: #131313;
+  --ink: #eeeeee;
+  --muted-foreground: #c8c8c8;
+  --readback-foreground: #c8c8c8;
+  --subtle-foreground: #c8c8c8;
+  --marmalade-thumb: color-mix(in oklab, var(--foreground) 32%, transparent);
+  --marmalade-track: color-mix(in oklab, var(--foreground) 7%, transparent);
+}
+
+/* Always-visible scrollbars. bb hides them on .thread-scrollbar /
+   .transient-scrollbar / sidebar content (scrollbar-width:none, transparent
+   thumbs until scrolling). Chromium ignores ::-webkit-scrollbar sizing when
+   scrollbar-color/width are set, so reset those to auto and style the
+   pseudo-elements. */
+*,
+.thread-scrollbar,
+.transient-scrollbar,
+[data-sidebar="content"] {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+*::-webkit-scrollbar,
+.thread-scrollbar::-webkit-scrollbar,
+.transient-scrollbar::-webkit-scrollbar,
+[data-sidebar="content"]::-webkit-scrollbar {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+*::-webkit-scrollbar-track,
+.thread-scrollbar::-webkit-scrollbar-track,
+.transient-scrollbar::-webkit-scrollbar-track {
+  background-color: var(--marmalade-track);
+}
+*::-webkit-scrollbar-thumb,
+.thread-scrollbar::-webkit-scrollbar-thumb,
+.transient-scrollbar::-webkit-scrollbar-thumb,
+.thread-scrollbar[data-scrollbar-scrolling="true"]::-webkit-scrollbar-thumb,
+.transient-scrollbar[data-scrollbar-scrolling="true"]::-webkit-scrollbar-thumb {
+  background-color: var(--marmalade-thumb);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover,
+.thread-scrollbar::-webkit-scrollbar-thumb:hover,
+.transient-scrollbar::-webkit-scrollbar-thumb:hover,
+.thread-scrollbar[data-scrollbar-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+.transient-scrollbar[data-scrollbar-scrolling="true"]::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+  background-color: #f97316;
+  background-clip: padding-box;
+}
