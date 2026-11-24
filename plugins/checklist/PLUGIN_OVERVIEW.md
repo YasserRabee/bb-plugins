@@ -1,5 +1,5 @@
-Give every thread a live checklist the agent keeps as it works, like Claude
-Desktop's todo list.
+The agent plans with a checklist and ticks items off as it works, so you can
+see where a long task stands without reading the whole thread.
 
 ## What you get
 
@@ -16,7 +16,8 @@ Desktop's todo list.
   collapses to one line showing the current step, and each thread remembers
   whether you collapsed it. A finished list shows as "All N done" and stays
   until your next prompt.
-- A `done/total` pill in the thread header that opens the tab.
+- A `3/5` progress badge on the thread's row in the thread list, with the
+  current step on hover. Turn on Organize → Rows → Metadata to see it.
 
 ## How it works
 

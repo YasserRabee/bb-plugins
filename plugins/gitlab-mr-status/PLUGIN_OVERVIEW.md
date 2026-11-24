@@ -1,5 +1,5 @@
-GitLab merge request status for every thread, the way bb's GitHub PR Status
-shows pull requests.
+Each thread shows the GitLab merge request for its branch, where you already
+look: above the composer, in the thread list and in chat.
 
 ## What you get
 
