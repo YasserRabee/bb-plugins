@@ -6,7 +6,10 @@ description: How the Claude Accounts plugin picks which Claude Code account (pro
 # Claude Accounts
 
 An account is a Claude Code profile with a `CLAUDE_CONFIG_DIR` on each
-machine that runs threads, a `claude setup-token` OAuth token, or both. A
+machine that runs threads, a secret, or both. The secret is either a
+`claude setup-token` OAuth token (sk-ant-oat01-, billed to a Pro/Max
+subscription) or an Anthropic Console API key (sk-ant-api03-, billed per
+token to a Console org; lists show it as "API key"). A
 thread is pinned to one account on its first run and keeps it until someone
 switches it:
 
@@ -24,6 +27,7 @@ Changing a default affects only threads started afterwards.
 bb claude-accounts list [--json]
 bb claude-accounts add <label> --config-dir ~/.claude-work   # profile dir
 echo "$TOKEN" | bb claude-accounts add <label> --token-stdin # token (never as an argument)
+echo "$KEY" | bb claude-accounts add <label> --api-key-stdin  # Console API key, likewise
 bb claude-accounts add <label> --id <id> ...                 # update one
 bb claude-accounts check <id|system> [--json]                # login per machine
 bb claude-accounts default <id|system|none> [--project <project-id>]
@@ -41,17 +45,24 @@ then `/login` on that machine. Do not run that for them.
   into the new account's config dir, and the next turn runs and bills there.
   `use` refuses without `--confirm`. Pass `--confirm` only when the user has
   explicitly agreed to switch that thread.
-- Never put a token in a command argument, file, or chat; pipe it with
-  `--token-stdin`.
+- Never put a token or API key in a command argument, file, or chat; pipe it
+  with `--token-stdin` or `--api-key-stdin`. An account holds one of the
+  two: adding either replaces the other.
 - Do not change defaults or switch threads unless the user asked.
 
 ## Constraints
 
 - A config dir is a path on the thread's machine; it must exist and be logged
   in on every machine where it is used. `check` reports each machine.
-- Tokens stay on the bb server. Each machine gets a 0600 token file and a
-  wrapper set as `BB_CLAUDE_CODE_EXECUTABLE`, so the token never appears in
-  the thread timeline. The wrapper runs `claude` from `PATH`.
+- Tokens and API keys stay on the bb server. Each machine gets a 0600 file
+  and a wrapper set as `BB_CLAUDE_CODE_EXECUTABLE`, so the secret never
+  appears in the thread timeline. The wrapper exports it as
+  `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`, unsets the env
+  credentials Claude Code would prefer (`ANTHROPIC_AUTH_TOKEN`, the other
+  secret, `CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`), and runs `claude` from
+  `PATH`. `ANTHROPIC_API_KEY` already beats `apiKeyHelper` and a `/login`
+  subscription; an `env` block in the config dir's `settings.json` (or
+  managed settings) that sets those variables can still override it.
 - A removed account makes its pinned threads fail to start rather than
   silently using another login; switch those threads to another account.
 - Only Claude Code threads are affected.

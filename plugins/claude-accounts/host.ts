@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contract.ts";
-import { wrapperScript } from "./resolve.ts";
+import { secretEnvName, wrapperScript } from "./resolve.ts";
 
 export function defaultConfigDir(): string {
   return process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
@@ -95,7 +95,7 @@ export async function ensureTokenWrapper(dataDir: string, profileId: string, tok
   const wrapperPath = join(dir, "claude");
   await writeFile(tokenFile, `${token}\n`, { mode: 0o600 });
   await chmod(tokenFile, 0o600);
-  await writeFile(wrapperPath, wrapperScript(tokenFile, wrapperPath), { mode: 0o700 });
+  await writeFile(wrapperPath, wrapperScript(tokenFile, wrapperPath, secretEnvName(token)), { mode: 0o700 });
   await chmod(wrapperPath, 0o700);
   return { wrapperPath };
 }

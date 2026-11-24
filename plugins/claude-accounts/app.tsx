@@ -42,6 +42,10 @@ const ACCOUNTS_CHANGED = "claude-accounts-changed";
 const SYSTEM_PROFILE = "system";
 const SYSTEM_LABEL = "Machine login";
 
+/** "Console (API key)": the label with the account's kind, for pickers. */
+const profileLabel = (profile: Profile) =>
+  profile.apiKey ? `${profile.label} (API key)` : profile.label;
+
 type Accounts = {
   profiles: Profile[];
   globalDefault: string | null;
@@ -60,7 +64,8 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 
 function labelOf(accounts: Accounts | null, profileId: string | null | undefined): string {
   if (!profileId || profileId === SYSTEM_PROFILE) return SYSTEM_LABEL;
-  return accounts?.profiles.find((p) => p.id === profileId)?.label ?? `${profileId} (removed)`;
+  const profile = accounts?.profiles.find((p) => p.id === profileId);
+  return profile ? profileLabel(profile) : `${profileId} (removed)`;
 }
 
 const SOURCE_LABEL: Record<ThreadChoice["source"], string> = {
@@ -110,23 +115,26 @@ function AccountSelect({
   accounts,
   value,
   onChange,
-  emptyLabel,
+  defaultId,
   className,
   ariaLabel,
 }: {
   accounts: Accounts | null;
   value: string | null;
   onChange: (value: string | null) => void;
-  emptyLabel?: string;
+  /** What null resolves to. Its item reads "… (default)" and picks null, so the value keeps following the default. */
+  defaultId: string;
   className?: string;
   ariaLabel: string;
 }) {
-  const options: { id: string | null; label: string }[] = [
-    ...(emptyLabel !== undefined ? [{ id: null, label: emptyLabel }] : []),
-    { id: SYSTEM_PROFILE, label: SYSTEM_LABEL },
-    ...(accounts?.profiles ?? []),
-  ];
-  const current = options.find((option) => option.id === value) ?? options[0];
+  const accountIds = [SYSTEM_PROFILE, ...(accounts?.profiles ?? []).map((p) => p.id)];
+  // A removed default still gets its item, so null always has one.
+  if (!accountIds.includes(defaultId)) accountIds.unshift(defaultId);
+  const options = accountIds.map((id) => ({
+    id: id === defaultId ? null : id,
+    label: id === defaultId ? `${labelOf(accounts, id)} (default)` : labelOf(accounts, id),
+  }));
+  const current = options.find((option) => option.id === value) ?? options.find((option) => option.id === null);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -144,7 +152,7 @@ function AccountSelect({
           <DropdownMenuItem key={option.id ?? ""} onSelect={() => onChange(option.id)}>
             <Icon
               name="Check"
-              className={cn("size-3.5", option.id === value ? "opacity-100" : "opacity-0")}
+              className={cn("size-3.5", option === current ? "opacity-100" : "opacity-0")}
             />
             {option.label}
           </DropdownMenuItem>
@@ -279,7 +287,7 @@ function NewThreadAccountPicker() {
         accounts={accounts}
         value={picked}
         onChange={choose}
-        emptyLabel={`Default: ${labelOf(accounts, projectDefault)}`}
+        defaultId={projectDefault ?? SYSTEM_PROFILE}
         className="h-7 max-w-44 border-transparent bg-transparent text-xs text-muted-foreground hover:text-foreground"
       />
       {picked !== null && picked !== (accounts.projectDefaults[projectId] ?? null) ? (
@@ -331,6 +339,7 @@ function ProfileForm({
   const [label, setLabel] = useState(initial?.label ?? "");
   const [configDir, setConfigDir] = useState(initial?.configDir ?? "");
   const [token, setToken] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const [clearToken, setClearToken] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async (event: FormEvent) => {
@@ -341,6 +350,7 @@ function ProfileForm({
         label,
         configDir: configDir.trim() === "" ? null : configDir.trim(),
         ...(token.trim() !== "" ? { token: token.trim() } : clearToken ? { token: null } : {}),
+        ...(apiKey.trim() !== "" ? { apiKey: apiKey.trim() } : {}),
       });
       onDone();
     } catch (cause) {
@@ -352,19 +362,25 @@ function ProfileForm({
       <Field label="Name">
         <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Work" required />
       </Field>
-      <Field label="Config dir (CLAUDE_CONFIG_DIR)" hint="On each machine that runs threads, e.g. ~/.claude-work. Leave empty for a token-only account.">
+      <Field label="Config dir (CLAUDE_CONFIG_DIR)" hint="On each machine that runs threads, e.g. ~/.claude-work. Leave empty for a token or API key only account.">
         <Input value={configDir} onChange={(e) => setConfigDir(e.target.value)} placeholder="~/.claude-work" />
       </Field>
       <Field
         label="OAuth token (optional)"
-        hint={initial?.hasToken ? "A token is stored. Paste a new one to replace it." : "The sk-ant-oat01- token `claude setup-token` prints in the terminal (not the browser code). Stored on the bb server, never shown again."}
+        hint={initial?.hasToken && !initial.apiKey ? "A token is stored. Paste a new one to replace it." : "For a Pro/Max subscription: the sk-ant-oat01- token `claude setup-token` prints in the terminal (not the browser code). Stored on the bb server, never shown again."}
       >
         <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} />
+      </Field>
+      <Field
+        label="Console API key (optional, instead of a token)"
+        hint={initial?.apiKey ? "An API key is stored. Paste a new one to replace it." : "Billed per token to a Console org: an sk-ant-api03- key from console.anthropic.com. Stored on the bb server, never shown again."}
+      >
+        <Input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
       </Field>
       {initial?.hasToken ? (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={clearToken} onChange={(e) => setClearToken(e.target.checked)} />
-          Remove the stored token
+          Remove the stored {initial.apiKey ? "API key" : "token"}
         </label>
       ) : null}
       {error !== null ? (
@@ -418,7 +434,7 @@ function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void 
       <div className="flex items-center gap-2">
         <span className="font-medium">{profile.label}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-          {[profile.configDir, profile.hasToken ? "token" : null].filter(Boolean).join(" + ")}
+          {[profile.configDir, profile.hasToken ? (profile.apiKey ? "API key" : "token") : null].filter(Boolean).join(" + ")}
         </span>
         <Button variant="ghost" size="icon" className="size-7" aria-label={`Recheck ${profile.label}`} onClick={check} disabled={checking}>
           <Icon name="RefreshCw" className={cn("size-4", checking && "animate-spin")} />
@@ -510,7 +526,7 @@ function SettingsSection() {
             ariaLabel="Global default account"
             accounts={accounts}
             value={accounts.globalDefault}
-            emptyLabel={SYSTEM_LABEL}
+            defaultId={SYSTEM_PROFILE}
             onChange={(profileId) => void rpc.call("accounts_set_default", { projectId: null, profileId })}
           />
         </div>
@@ -521,7 +537,7 @@ function SettingsSection() {
               ariaLabel={`Default account for ${project.name}`}
               accounts={accounts}
               value={accounts.projectDefaults[project.id] ?? null}
-              emptyLabel={`Use global (${labelOf(accounts, accounts.globalDefault)})`}
+              defaultId={accounts.globalDefault ?? SYSTEM_PROFILE}
               onChange={(profileId) =>
                 void rpc.call("accounts_set_default", { projectId: project.id, profileId })
               }
@@ -557,7 +573,7 @@ export default definePluginApp((app) => {
       const { rpc, accounts, choices } = data;
       if (accounts === null || accounts.profiles.length === 0) return null;
       const current = choices[thread.id]?.profileId ?? null;
-      const options = [{ id: SYSTEM_PROFILE, label: SYSTEM_LABEL }, ...accounts.profiles];
+      const options = [{ id: SYSTEM_PROFILE }, ...accounts.profiles].map(({ id }) => ({ id, label: labelOf(accounts, id) }));
       return {
         label: "Claude account",
         detail: current === null ? "Not started" : labelOf(accounts, current),

@@ -17,6 +17,9 @@ export const profileSchema = z.object({
   configDir: z.string().trim().min(1).max(500).nullable(),
   // A `claude setup-token` token is stored for this profile (server-only).
   hasToken: z.boolean(),
+  // The stored secret is a Console API key (sk-ant-api…), not an OAuth token.
+  // Absent on profiles saved before API keys existed.
+  apiKey: z.boolean().optional(),
 });
 export type Profile = z.infer<typeof profileSchema>;
 
@@ -32,6 +35,12 @@ export function normalizeToken(raw: string): string {
         "into the terminal running `claude setup-token`; it then prints the sk-ant-oat01- token.",
     );
   }
+  if (/^sk-ant-api\d+-/.test(token)) {
+    throw new Error(
+      "That is a Console API key (sk-ant-api03-), not a `claude setup-token` token. " +
+        "Add it as an API key instead (--api-key-stdin, or the API key field).",
+    );
+  }
   if (!/^sk-ant-oat\d+-[A-Za-z0-9_-]{20,}$/.test(token)) {
     throw new Error(
       "That isn't a whole `claude setup-token` token: it starts with sk-ant-oat01-. " +
@@ -39,6 +48,27 @@ export function normalizeToken(raw: string): string {
     );
   }
   return token;
+}
+
+/**
+ * An Anthropic Console API key, with wrapped line breaks removed. Throws
+ * (without echoing it) when it isn't one.
+ */
+export function normalizeApiKey(raw: string): string {
+  const key = raw.replace(/\s+/g, "");
+  if (/^sk-ant-oat\d+-/.test(key)) {
+    throw new Error(
+      "That is a `claude setup-token` OAuth token (sk-ant-oat01-), not a Console API key. " +
+        "Add it as a token instead (--token-stdin, or the OAuth token field).",
+    );
+  }
+  if (!/^sk-ant-api\d+-[A-Za-z0-9_-]{20,}$/.test(key)) {
+    throw new Error(
+      "That isn't a whole Anthropic Console API key: it starts with sk-ant-api03-. " +
+        "If the terminal wrapped it over several lines, copy all of them.",
+    );
+  }
+  return key;
 }
 
 export const threadChoiceSchema = z.object({
@@ -87,17 +117,37 @@ export function expandHome(path: string, homeDir: string): string {
 
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
+/** The env var Claude Code reads the stored secret from. */
+export const secretEnvName = (secret: string) =>
+  /^sk-ant-api\d+-/.test(secret) ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN";
+
 /**
- * The executable bb runs for a token profile. It exports the token from a
- * 0600 file so the token never appears in bb's resolved-env timeline, then
- * runs the `claude` bb would have found on PATH, skipping itself.
+ * Credentials Claude Code prefers over ANTHROPIC_API_KEY or
+ * CLAUDE_CODE_OAUTH_TOKEN (cloud providers, then ANTHROPIC_AUTH_TOKEN, then
+ * ANTHROPIC_API_KEY, apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN, /login). The
+ * wrapper unsets these so a machine's own login can't win over the account.
  */
-export function wrapperScript(tokenFile: string, selfPath: string): string {
+const COMPETING_ENV = [
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+];
+
+/**
+ * The executable bb runs for a token or API key profile. It exports the
+ * secret from a 0600 file so it never appears in bb's resolved-env timeline,
+ * then runs the `claude` bb would have found on PATH, skipping itself.
+ */
+export function wrapperScript(tokenFile: string, selfPath: string, envName: string): string {
   return [
     "#!/bin/sh",
     "# Written by the bb claude-accounts plugin. Do not edit.",
-    `CLAUDE_CODE_OAUTH_TOKEN=$(cat ${shellQuote(tokenFile)}) || exit 1`,
-    "export CLAUDE_CODE_OAUTH_TOKEN",
+    `unset ${COMPETING_ENV.join(" ")}`,
+    `${envName}=$(cat ${shellQuote(tokenFile)}) || exit 1`,
+    `export ${envName}`,
     `self=${shellQuote(selfPath)}`,
     "IFS=:",
     "for dir in $PATH; do",

@@ -4,6 +4,7 @@ import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/tes
 import plugin from "./server.ts";
 
 const TOKEN = "sk-ant-oat01-secret-value-0123456789";
+const API_KEY = "sk-ant-api03-secret-key-value-0123456789";
 
 function setup() {
   const metadata = new Map<string, Record<string, unknown>>();
@@ -143,5 +144,48 @@ test("switching a started thread needs consent and copies its transcript", async
   assert.equal((await t.env("t1"))[0]?.value, "/abs/home");
   assert.deepEqual(t.metadata.get("t1"), { profileId: "home", source: "thread" });
   assert.equal((await t.rpc("accounts_switch", { threadId: "t1", profileId: "home", confirm: false })).status, "unchanged");
+  await t.harness.lifecycle.dispose();
+});
+
+test("Console API keys: validated per field, labelled, and run through the wrapper", async () => {
+  const t = setup();
+  await plugin(t.bb);
+  // Pasted into the wrong field: a pointed error that never echoes the secret.
+  for (const [input, pattern] of [
+    [{ token: API_KEY }, /Console API key.*--api-key-stdin/],
+    [{ apiKey: TOKEN }, /setup-token.*--token-stdin/],
+    [{ apiKey: "sk-ant-api03-short" }, /isn't a whole Anthropic Console API key/],
+    [{ token: TOKEN, apiKey: API_KEY }, /not both/],
+  ] as const) {
+    await assert.rejects(t.rpc("accounts_save", { label: "Bad", configDir: null, ...input }), (error: Error) => {
+      assert.match(error.message, pattern);
+      assert.ok(!error.message.includes("secret"), error.message);
+      return true;
+    });
+  }
+  assert.deepEqual((await t.rpc("accounts_list", null)).profiles, []);
+
+  const wrapped = `${API_KEY.slice(0, 20)}\n${API_KEY.slice(20)}\n`;
+  const org = await t.rpc("accounts_save", { label: "Console", configDir: null, apiKey: wrapped });
+  assert.deepEqual(org, { id: "console", label: "Console", configDir: null, hasToken: true, apiKey: true });
+  await t.rpc("accounts_set_default", { projectId: null, profileId: "console" });
+  t.threads.set("t1", { projectId: "proj_1", sourceThreadId: null });
+  const entries = await t.env("t1");
+  assert.deepEqual(entries, [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/data/console/claude", reason: "Claude account: Console" }]);
+  // The wrapper picks ANTHROPIC_API_KEY from the key's prefix (host.test.ts).
+  assert.equal(t.hostCalls.find((c) => c.method === "ensureTokenWrapper")?.input.token, API_KEY);
+
+  const cli = await t.harness.runCli(["list"]);
+  assert.match(cli.stdout ?? "", /console\tConsole\tdefault config dir \+ API key/);
+  for (const output of [JSON.stringify(entries), JSON.stringify(await t.rpc("accounts_list", null)), JSON.stringify(cli)]) {
+    assert.ok(!output.includes(API_KEY), output);
+  }
+
+  // Editing without a new secret keeps the kind; a token replaces the key.
+  assert.equal((await t.rpc("accounts_save", { id: "console", label: "Org", configDir: null })).apiKey, true);
+  const swapped = await t.rpc("accounts_save", { id: "console", label: "Org", configDir: null, token: TOKEN });
+  assert.deepEqual(swapped, { id: "console", label: "Org", configDir: null, hasToken: true });
+  await t.env("t1");
+  assert.equal(t.hostCalls.filter((c) => c.method === "ensureTokenWrapper").at(-1)?.input.token, TOKEN);
   await t.harness.lifecycle.dispose();
 });
