@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server.ts";
+import type { LoginStatus } from "./usage.ts";
+
+const OK_LOGIN: LoginStatus = {
+  verified: "ok",
+  note: null,
+  email: "me@example.com",
+  plan: "Max 5x",
+  usage: [{ window: "5h", usedPercent: 82, resetsAt: "2026-11-24T14:00:00.000Z" }],
+  retryAfterSec: null,
+};
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
 const TOKEN = "sk-ant-oat01-secret-value-0123456789";
 const API_KEY = "sk-ant-api03-secret-key-value-0123456789";
@@ -11,6 +22,7 @@ function setup() {
   const threads = new Map<string, { projectId: string; sourceThreadId: string | null }>();
   const sessions = new Map<string, string>();
   const hostCalls: { method: string; input: any }[] = [];
+  const login: { current: LoginStatus } = { current: OK_LOGIN };
   const { bb, harness } = createFakePluginHost({
     pluginId: "claude-profiles",
     experimental_callHostRpc: ({ method, input }) => {
@@ -18,7 +30,10 @@ function setup() {
       if (method === "describe") return { homeDir: "/home/me", defaultConfigDir: "/home/me/.claude" };
       if (method === "ensureTokenWrapper") return { wrapperPath: `/data/${(input as any).profileId}/claude` };
       if (method === "migrateTranscript") return { found: true, copied: 2 };
-      if (method === "checkProfile") return { configDir: (input as any).configDir ?? "/home/me/.claude", exists: true, loggedIn: true, email: "me@example.com" };
+      if (method === "checkProfile") {
+        const configDir = (input as any).configDir ?? "/home/me/.claude";
+        return { configDir, exists: !configDir.includes("missing"), loggedIn: true, email: "me@example.com", login: login.current };
+      }
       if (method === "removeProfile") return { removed: true };
       throw new Error(`unexpected host call ${method}`);
     },
@@ -50,7 +65,7 @@ function setup() {
   const rpc = (method: string, input: unknown) => harness.behavior.callRpc(method, input) as Promise<any>;
   const env = (threadId: string | null, projectId: string | null = "proj_1") =>
     harness.resolveProviderEnv("claude-code", { threadId, projectId, hostId: "host_a" });
-  return { bb, harness, rpc, env, metadata, threads, sessions, hostCalls };
+  return { bb, harness, rpc, env, metadata, threads, sessions, hostCalls, login };
 }
 
 test("threads pin to new-thread pick → fork source → project → global → machine login", async () => {
@@ -187,5 +202,65 @@ test("Console API keys: validated per field, labelled, and run through the wrapp
   assert.deepEqual(swapped, { id: "console", label: "Org", configDir: null, hasToken: true });
   await t.env("t1");
   assert.equal(t.hostCalls.filter((c) => c.method === "ensureTokenWrapper").at(-1)?.input.token, TOKEN);
+  await t.harness.lifecycle.dispose();
+});
+
+test("check tells revoked logins from missing files, and caches status for the picker", async (ctx) => {
+  const t = setup();
+  await plugin(t.bb);
+  await t.rpc("accounts_save", { label: "Bot", configDir: null, token: TOKEN });
+  await t.rpc("accounts_save", { label: "Gone", configDir: "/srv/missing" });
+  const checks = () => t.hostCalls.filter((c) => c.method === "checkProfile");
+
+  // Accepted: plan and usage in the check, the CLI and the cached status.
+  const [ok] = (await t.rpc("accounts_check", { id: "bot" })).hosts;
+  assert.equal(ok.ok, true);
+  assert.equal(ok.login.plan, "Max 5x");
+  assert.deepEqual(checks().at(-1)?.input, { configDir: null, profileId: "bot" }); // the host reads the token file
+  const cli = await t.harness.runCli(["check", "bot"]);
+  assert.match(cli.stdout ?? "", /laptop\tok\tme@example.com · Max 5x\t82% of 5h · resets /);
+  const listed = await t.rpc("accounts_list", null);
+  assert.equal(listed.status.bot.usage[0].usedPercent, 82);
+  assert.ok(!JSON.stringify(listed).includes(TOKEN));
+
+  // Revoked: not ready, said so, distinct from missing files.
+  t.login.current = { ...OK_LOGIN, verified: "rejected", note: "Anthropic rejected this login: revoked or expired", usage: null, plan: null };
+  const [revoked] = (await t.rpc("accounts_check", { id: "bot" })).hosts;
+  assert.equal(revoked.ok, false);
+  assert.match(revoked.error, /revoked or expired/);
+  const revokedCli = await t.harness.runCli(["check", "bot"]);
+  assert.equal(revokedCli.exitCode, 1);
+  assert.match(revokedCli.stdout ?? "", /\trevoked or expired\t/);
+  assert.equal((await t.rpc("accounts_list", null)).status.bot.verified, "rejected");
+
+  t.login.current = { ...OK_LOGIN, verified: "unknown", note: "No login found to check", plan: null, usage: null, email: null };
+  const [missing] = (await t.rpc("accounts_check", { id: "gone" })).hosts;
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /does not exist on this machine/);
+  assert.match((await t.harness.runCli(["check", "gone"])).stdout ?? "", /\tnot ready\t/);
+
+  // Watching refreshes only what is stale: system is new, bot and gone are fresh.
+  const before = checks().length;
+  await t.rpc("accounts_refresh_status", null);
+  await settle();
+  assert.deepEqual(checks().slice(before).map((c) => c.input.configDir), [null]);
+  await t.rpc("accounts_refresh_status", null);
+  await settle();
+  assert.equal(checks().length, before + 1);
+
+  // A throttled usage call pushes the next refresh past its retry-after.
+  ctx.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  t.login.current = { ...OK_LOGIN, usage: null, retryAfterSec: 3600 };
+  await t.rpc("accounts_check", { id: "bot" });
+  ctx.mock.timers.tick(10 * 60_000); // past the 3-minute TTL, inside the hour
+  const throttled = checks().length;
+  await t.rpc("accounts_refresh_status", null);
+  await settle();
+  const refreshed = checks().slice(throttled).map((c) => c.input.profileId);
+  assert.ok(!refreshed.includes("bot"), JSON.stringify(refreshed));
+
+  // A new secret drops the old status.
+  await t.rpc("accounts_save", { id: "bot", label: "Bot", configDir: null, token: TOKEN });
+  assert.equal((await t.rpc("accounts_list", null)).status.bot, undefined);
   await t.harness.lifecycle.dispose();
 });

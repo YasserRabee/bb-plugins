@@ -16,7 +16,8 @@ import {
   type ExperimentalPluginProviderEnvEntry,
 } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { hostContract } from "./contract.ts";
+import { hostContract, loginStatusSchema } from "./contract.ts";
+import { usageLine, type LoginStatus } from "./usage.ts";
 import {
   SYSTEM_PROFILE,
   expandHome,
@@ -34,6 +35,8 @@ import {
 const PROVIDER_ID = "claude-code";
 /** A new-thread composer pick waits this long for its thread's first run. */
 export const PENDING_TTL_MS = 2 * 60_000;
+/** A cached login status is refreshed after this long, and only while someone watches it. */
+export const STATUS_TTL_MS = 3 * 60_000;
 /** Realtime channel; any change to profiles, defaults, or a thread's pick. */
 export const ACCOUNTS_CHANGED = "claude-profiles-changed";
 
@@ -45,7 +48,10 @@ const hostCheckSchema = z.object({
   configDir: z.string().nullable(),
   email: z.string().nullable(),
   error: z.string().nullable(),
+  // Null when the machine couldn't be asked.
+  login: loginStatusSchema.nullable(),
 });
+const cachedStatusSchema = loginStatusSchema.extend({ checkedAt: z.number() });
 
 export const rpcContract = defineRpcContract({
   accounts_list: {
@@ -54,7 +60,14 @@ export const rpcContract = defineRpcContract({
       profiles: z.array(profileSchema),
       globalDefault: z.string().nullable(),
       projectDefaults: z.record(z.string(), z.string()),
+      // Last live check per account id (and "system"): plan, usage, accepted or not.
+      status: z.record(z.string(), cachedStatusSchema),
     }),
+  },
+  accounts_refresh_status: {
+    // Re-checks stale accounts in the background; ACCOUNTS_CHANGED fires as each lands.
+    input: z.null(),
+    output: z.object({ ok: z.literal(true) }),
   },
   accounts_save: {
     input: z.object({
@@ -120,6 +133,9 @@ export default async function plugin(bb: BbPluginApi) {
   const kv = bb.storage.kv;
   const host = bb.hosts.experimental_client({ contract: hostContract });
   const homes = new Map<string, string>();
+  // In memory: a restart only costs one re-check.
+  const statuses = new Map<string, { status: z.infer<typeof cachedStatusSchema>; nextAt: number }>();
+  const refreshing = new Set<string>();
 
   const readProfiles = async () => (await kv.get<Profile[]>("profiles")) ?? [];
   const findProfile = async (id: string) =>
@@ -302,6 +318,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (input.configDir === null && !hasToken) {
       throw new Error("An account needs a config dir, a token or API key, or both");
     }
+    if (secret !== undefined) statuses.delete(id); // a new secret makes the old status wrong
     if (secret === null) await kv.delete(`token:${id}`);
     else if (secret !== undefined) await kv.set(`token:${id}`, secret);
     const apiKey = secret === undefined ? existing?.apiKey === true && hasToken : typeof input.apiKey === "string";
@@ -322,6 +339,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (!profiles.some((profile) => profile.id === id)) return false;
     await kv.set("profiles", profiles.filter((profile) => profile.id !== id));
     await kv.delete(`token:${id}`);
+    statuses.delete(id);
     if ((await kv.get<string>("globalDefault")) === id) await kv.delete("globalDefault");
     const defaults = await readProjectDefaults();
     await kv.set(
@@ -358,21 +376,55 @@ export default async function plugin(bb: BbPluginApi) {
         const base = { hostId: target.id, hostName: target.name ?? target.id };
         try {
           const configDir = await configDirOn(target.id, profile);
-          const facts = await host.call("checkProfile", { configDir }, { hostId: target.id, signal: AbortSignal.timeout(10_000) });
+          // Write the wrapper first: the host checks the secret in its token file.
           if (profile?.hasToken) await wrapperOn(target.id, profile);
+          const facts = await host.call(
+            "checkProfile",
+            { configDir, profileId: profile?.hasToken ? profile.id : null },
+            { hostId: target.id, signal: AbortSignal.timeout(25_000) },
+          );
           const tokenOnly = profile !== null && profile.hasToken && profile.configDir === null;
-          const ok = tokenOnly || (facts.exists && (facts.loggedIn || profile?.hasToken === true));
-          const error = ok
-            ? null
-            : facts.exists
-              ? "Not logged in"
-              : `${facts.configDir} does not exist on this machine`;
-          return { ...base, ok, configDir: facts.configDir, email: facts.email, error };
+          const present = tokenOnly || (facts.exists && (facts.loggedIn || profile?.hasToken === true));
+          const rejected = facts.login.verified === "rejected";
+          const error = rejected
+            ? facts.login.note
+            : present
+              ? null
+              : facts.exists
+                ? "Not logged in"
+                : `${facts.configDir} does not exist on this machine`;
+          return { ...base, ok: present && !rejected, configDir: facts.configDir, email: facts.email, error, login: facts.login };
         } catch (cause) {
-          return { ...base, ok: false, configDir: null, email: null, error: errorText(cause) };
+          return { ...base, ok: false, configDir: null, email: null, error: errorText(cause), login: null };
         }
       }),
-    );
+    ).then((results) => {
+      remember(id, results.map((r) => r.login));
+      return results;
+    });
+  }
+
+  /** Keep the most telling host's answer: accepted with usage, then accepted, then rejected. */
+  function remember(id: string, logins: (LoginStatus | null)[]) {
+    const rank = (l: LoginStatus) => (l.verified === "ok" ? (l.usage ? 3 : 2) : l.verified === "rejected" ? 1 : 0);
+    const best = logins.filter((l): l is LoginStatus => l !== null).sort((a, b) => rank(b) - rank(a))[0];
+    if (best === undefined) return;
+    const checkedAt = Date.now();
+    // Honour a usage throttle's retry-after so watching never hammers Anthropic.
+    const nextAt = checkedAt + Math.max(STATUS_TTL_MS, (best.retryAfterSec ?? 0) * 1000);
+    statuses.set(id, { status: { ...best, checkedAt }, nextAt });
+    changed({ status: id });
+  }
+
+  async function refreshStale() {
+    const ids = [SYSTEM_PROFILE, ...(await readProfiles()).map((p) => p.id)];
+    for (const id of ids) {
+      if (refreshing.has(id) || (statuses.get(id)?.nextAt ?? 0) > Date.now()) continue;
+      refreshing.add(id);
+      void checkOnHosts(id)
+        .catch((cause) => bb.log.warn(`status check for ${id} failed: ${errorText(cause)}`))
+        .finally(() => refreshing.delete(id));
+    }
   }
 
   bb.rpc.register(rpcContract, {
@@ -380,7 +432,12 @@ export default async function plugin(bb: BbPluginApi) {
       profiles: await readProfiles(),
       globalDefault: (await kv.get<string>("globalDefault")) ?? null,
       projectDefaults: await readProjectDefaults(),
+      status: Object.fromEntries([...statuses].map(([id, entry]) => [id, entry.status])),
     }),
+    accounts_refresh_status: async () => {
+      await refreshStale();
+      return { ok: true as const };
+    },
     accounts_save: (input) => saveProfile(input),
     accounts_remove: async ({ id }) => ({ removed: await removeProfile(id) }),
     accounts_check: async ({ id }) => ({ hosts: await checkOnHosts(id) }),
@@ -484,14 +541,20 @@ export default async function plugin(bb: BbPluginApi) {
           },
         }),
         check: cliCommand({
-          summary: "Check an account's login on every machine",
+          summary: "Check an account's login live with Anthropic on every machine, with its plan and usage",
           positionals: [{ name: "id", description: `Account id, or ${SYSTEM_PROFILE}`, required: true }],
           options: { json: { type: "boolean", description: "Emit machine-readable JSON" } },
           async run({ positionals, options }) {
             const hosts = await checkOnHosts(positionals.id);
             if (options.json) return json({ hosts });
-            const lines = hosts.map(
-              (h) => `${h.hostName}\t${h.ok ? "ok" : "not ready"}\t${h.email ?? ""}\t${h.error ?? ""}`,
+            const lines = hosts.map((h) =>
+              [
+                h.hostName,
+                h.ok ? "ok" : h.login?.verified === "rejected" ? "revoked or expired" : "not ready",
+                [h.email, h.login?.plan].filter(Boolean).join(" · "),
+                h.login?.usage?.map((w) => usageLine(w)).join(", ") ?? "",
+                h.error ?? (h.login?.verified === "unknown" ? (h.login.note ?? "") : ""),
+              ].join("\t"),
             );
             return { exitCode: hosts.some((h) => h.ok) ? 0 : 1, stdout: `${lines.join("\n")}\n` };
           },

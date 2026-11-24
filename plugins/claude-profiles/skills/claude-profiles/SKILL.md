@@ -29,7 +29,7 @@ bb claude-profiles add <label> --config-dir ~/.claude-work   # profile dir
 echo "$TOKEN" | bb claude-profiles add <label> --token-stdin # token (never as an argument)
 echo "$KEY" | bb claude-profiles add <label> --api-key-stdin  # Console API key, likewise
 bb claude-profiles add <label> --id <id> ...                 # update one
-bb claude-profiles check <id|system> [--json]                # login per machine
+bb claude-profiles check <id|system> [--json]                # live login check, plan, usage
 bb claude-profiles default <id|system|none> [--project <project-id>]
 bb claude-profiles status [--thread <id>] [--json]
 bb claude-profiles use <id|system> [--thread <id>] [--confirm]
@@ -49,6 +49,16 @@ then `/login` on that machine. Do not run that for them.
   with `--token-stdin` or `--api-key-stdin`. An account holds one of the
   two: adding either replaces the other.
 - Do not change defaults or switch threads unless the user asked.
+
+## Limits and login checks
+
+`check` asks Anthropic, on each machine, whether the account's login is
+accepted, and reports "revoked or expired" apart from missing files. For
+`/login` accounts it also shows the plan (Pro, Max 5x…) and the 5h and
+weekly usage, e.g. "82% of 5h · resets 14:00"; the pickers show the 5h line.
+Setup-tokens show only accepted or revoked, and API keys have no such limits.
+When a thread hits a usage limit, run `check` on the other accounts and
+suggest one with room; switch only if the user agrees.
 
 ## Constraints
 

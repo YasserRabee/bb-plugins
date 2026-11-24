@@ -18,6 +18,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
 import type { Profile, ThreadChoice } from "./resolve";
+import { usageLine, type LoginStatus } from "./usage";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,7 +52,10 @@ type Accounts = {
   profiles: Profile[];
   globalDefault: string | null;
   projectDefaults: Record<string, string>;
+  status: Record<string, LoginStatus & { checkedAt: number }>;
 };
+// Must match STATUS_TTL_MS in server.ts.
+const STATUS_TTL_MS = 3 * 60_000;
 type HostCheck = {
   hostId: string;
   hostName: string;
@@ -59,9 +63,19 @@ type HostCheck = {
   configDir: string | null;
   email: string | null;
   error: string | null;
+  login: LoginStatus | null;
 };
 
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+/** The picker's second line: "37% of 5h · resets 14:00", or why the login fails. */
+function statusText(accounts: Accounts | null, profileId: string): string | null {
+  const status = accounts?.status[profileId];
+  if (status === undefined) return null;
+  if (status.verified === "rejected") return "Revoked or expired";
+  const fiveHour = status.usage?.find((w) => w.window === "5h");
+  return fiveHour ? usageLine(fiveHour) : null;
+}
 
 function labelOf(accounts: Accounts | null, profileId: string | null | undefined): string {
   if (!profileId || profileId === SYSTEM_PROFILE) return SYSTEM_LABEL;
@@ -131,13 +145,16 @@ function AccountSelect({
   const accountIds = [SYSTEM_PROFILE, ...(accounts?.profiles ?? []).map((p) => p.id)];
   // A removed default still gets its item, so null always has one.
   if (!accountIds.includes(defaultId)) accountIds.unshift(defaultId);
+  const rpc = useRpc<typeof rpcContract>();
   const options = accountIds.map((id) => ({
     id: id === defaultId ? null : id,
     label: id === defaultId ? `${labelOf(accounts, id)} (default)` : labelOf(accounts, id),
+    status: statusText(accounts, id),
   }));
   const current = options.find((option) => option.id === value) ?? options.find((option) => option.id === null);
   return (
-    <DropdownMenu>
+    // Usage is refreshed only while someone is looking at it.
+    <DropdownMenu onOpenChange={(open) => open && void rpc.call("accounts_refresh_status", null).catch(() => undefined)}>
       <DropdownMenuTrigger
         aria-label={ariaLabel}
         className={cn(
@@ -155,7 +172,12 @@ function AccountSelect({
               name="claude-profiles/check"
               className={cn("size-3.5", option === current ? "opacity-100" : "opacity-0")}
             />
-            {option.label}
+            <span className="flex min-w-0 flex-col">
+              <span>{option.label}</span>
+              {option.status !== null ? (
+                <span className="text-xs text-muted-foreground">{option.status}</span>
+              ) : null}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -320,8 +342,15 @@ function HostChecks({ checks }: { checks: HostCheck[] }) {
             className={cn("size-3.5", check.ok ? "text-muted-foreground" : "text-destructive")}
           />
           <span className="font-medium">{check.hostName}</span>
-          <span className="text-muted-foreground">
-            {check.ok ? (check.email ?? "ready") : check.error}
+          <span className="min-w-0 text-muted-foreground">
+            {check.ok
+              ? [check.email ?? "ready", check.login?.plan, ...(check.login?.usage ?? []).map((w) => usageLine(w))]
+                  .filter(Boolean)
+                  .join(" · ")
+              : check.login?.verified === "rejected"
+                ? `Revoked or expired: ${check.error}`
+                : check.error}
+            {check.ok && check.login?.verified === "unknown" && check.login.note ? ` (${check.login.note})` : null}
           </span>
         </li>
       ))}
@@ -441,11 +470,16 @@ function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void 
       .then(
         (result) => setChecks(result.hosts),
         (cause: unknown) =>
-          setChecks([{ hostId: "-", hostName: "Check failed", ok: false, configDir: null, email: null, error: message(cause) }]),
+          setChecks([{ hostId: "-", hostName: "Check failed", ok: false, configDir: null, email: null, error: message(cause), login: null }]),
       )
       .finally(() => setChecking(false));
   }, [rpc, profile.id]);
-  useEffect(check, [check]);
+  // Live while the row is on screen: check now, then again as the cache goes stale.
+  useEffect(() => {
+    check();
+    const timer = setInterval(check, STATUS_TTL_MS);
+    return () => clearInterval(timer);
+  }, [check]);
   const loginCommand = profile.configDir
     ? `CLAUDE_CONFIG_DIR=${profile.configDir} claude   # then /login`
     : null;
@@ -600,7 +634,7 @@ export default definePluginApp((app) => {
         choices: {
           items: options.map((option) => ({
             id: option.id,
-            label: option.label,
+            label: [option.label, statusText(accounts, option.id)].filter(Boolean).join(" · "),
             selected: option.id === current,
           })),
           hint: "A started conversation is copied to the new account after you confirm.",
