@@ -10,6 +10,12 @@ shows pull requests.
   the Info tab: the MR, its state and its pipeline.
 - A **`!12` badge on thread rows** in bb's thread list, colored by state with a
   marker while the pipeline runs or fails. Turn on Organize → Rows → Metadata.
+- **MR chips in chat messages**: a chip for each merge request a message
+  mentions (a full MR URL on any GitLab host glab knows, or `!12` for the
+  thread's project), with a hover card showing title, state, pipeline,
+  approvals, branches and author. Agents can also write
+  `::gitlab-mr{ref="!12"}` to place a chip in a reply. Choose chips, directive,
+  both or off in the plugin's settings.
 - A `bb merge-request` command for agents and terminals.
 
 ## How it works

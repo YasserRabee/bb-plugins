@@ -99,6 +99,21 @@ export const rpcContract = {
     output: z.record(z.string(), mergeRequestRowSchema),
     keyTags: (key: string) => [`mr:${key}`],
   },
+  /**
+   * Keyed read: one row per `<environmentId> <ref>`, where ref is `!12` (the
+   * environment's project) or a full merge request URL. Up to 50 per call.
+   */
+  mergeRequestRefs: {
+    input: z.object({ keys: z.array(z.string().max(700)).max(50) }),
+    output: z.record(z.string(), mergeRequestRowSchema),
+    keyTags: (key: string) => [`mr:${key}`],
+  },
+  /** Keyed read: the merge request refs in one message, keyed `<threadId> <messageId>`. */
+  messageRefs: {
+    input: z.object({ keys: z.array(z.string().max(500)).max(100) }),
+    output: z.record(z.string(), z.object({ refs: z.array(z.string()) })),
+    keyTags: (key: string) => [`msg:${key}`],
+  },
   markReady: { input: actionInput, output: actionOutput },
   markDraft: { input: actionInput, output: actionOutput },
   merge: {

@@ -28,10 +28,24 @@ import {
   rawApprovalsSchema,
   rawMergeRequestSchema,
 } from "./lib/gitlab.ts";
+import { findRefs, parseRef, sameMergeRequest } from "./lib/refs.ts";
 
 export { rpcContract } from "./lib/contract.ts";
 
 const POLL_MS = 20_000;
+/** Message pages read per walk (20 messages each) and threads kept. */
+const MAX_PAGES = 50;
+const PAGE = 20;
+const MAX_THREADS = 50;
+
+export const MESSAGE_REFERENCE_MODES = ["both", "chips", "directive", "off"] as const;
+export type MessageReferenceMode = (typeof MESSAGE_REFERENCE_MODES)[number];
+
+export const DIRECTIVE_INSTRUCTIONS =
+  'When a reply mentions a GitLab merge request, write it as the directive ::gitlab-mr{ref="!12"} for the ' +
+  "thread's own project, or ::gitlab-mr{ref=\"https://<host>/<group>/<project>/-/merge_requests/12\"} for any " +
+  "other project, on a line of its own, instead of a bare link. bb renders it as a live MR chip with a hover card. " +
+  "Never put it inside code.";
 const MAX_CONCURRENT = 4;
 
 /** How long a cached row answers reads before glab is asked again. */
@@ -53,6 +67,11 @@ function describe(failure: Failure, message: string): string {
   }
   return `glab failed: ${message}`;
 }
+
+type HostResult =
+  | { kind: "found"; detail: string; approvals: string | null }
+  | { kind: "none" }
+  | { kind: "failed"; failure: Failure; message: string };
 
 interface Workspace {
   cwd: string;
@@ -89,16 +108,10 @@ export function createService(bb: BbPluginApi) {
     return { cwd: environment.path, branch: environment.branchName, hostId: environment.hostId };
   }
 
-  async function lookup(environmentId: string): Promise<MergeRequestRow> {
-    const space = await workspace(environmentId);
-    if ("absent" in space) return { outcome: "absent" };
-    if ("unavailable" in space) return { outcome: "unavailable", message: space.unavailable };
+  /** A host answer as a row; a failed host call means the machine is offline or asleep. */
+  async function toRow(call: () => Promise<HostResult>): Promise<MergeRequestRow> {
     try {
-      const result = await host.call(
-        "lookup",
-        { cwd: space.cwd, branch: space.branch },
-        { hostId: space.hostId },
-      );
+      const result = await call();
       if (result.kind === "none") return { outcome: "absent" };
       if (result.kind === "failed") {
         return result.failure === "absent"
@@ -115,7 +128,6 @@ export function createService(bb: BbPluginApi) {
         ),
       };
     } catch (cause) {
-      // The host call itself failed: the machine is offline or asleep.
       return {
         outcome: "unavailable",
         message: `Could not reach the environment's machine: ${tidy(String(cause))}`,
@@ -123,30 +135,118 @@ export function createService(bb: BbPluginApi) {
     }
   }
 
-  /** One cached, de-duplicated read of an environment's merge request. */
-  function read(environmentId: string, options: { force?: boolean } = {}): Promise<MergeRequestRow> {
-    const hit = cache.get(environmentId);
+  async function lookup(environmentId: string): Promise<MergeRequestRow> {
+    const space = await workspace(environmentId);
+    if ("absent" in space) return { outcome: "absent" };
+    if ("unavailable" in space) return { outcome: "unavailable", message: space.unavailable };
+    return toRow(() => host.call("lookup", { cwd: space.cwd, branch: space.branch }, { hostId: space.hostId }));
+  }
+
+  /** `<environmentId> <ref>`: the environment's own MR when it matches, else glab on its machine. */
+  async function lookupRef(key: string): Promise<MergeRequestRow> {
+    const split = key.indexOf(" ");
+    const ref = split > 0 ? parseRef(key.slice(split + 1)) : null;
+    if (!ref) return { outcome: "absent" };
+    const environmentId = key.slice(0, split);
+    const own = await read(environmentId);
+    if (own.outcome === "available" && sameMergeRequest(own.mergeRequest.url, own.mergeRequest.iid, ref)) return own;
+    const environment = await bb.sdk.environments.get({ environmentId });
+    const cwd = environment.path && environment.isGitRepo ? environment.path : null;
+    if (!("host" in ref) && !cwd) return { outcome: "absent" };
+    return toRow(() => limited(() => host.call("fetch", { cwd, ...ref }, { hostId: environment.hostId })));
+  }
+
+  /**
+   * One cached, de-duplicated read of a row: an environment id (its branch's
+   * merge request) or `<environmentId> <ref>` (a referenced one).
+   */
+  function read(key: string, options: { force?: boolean } = {}): Promise<MergeRequestRow> {
+    const hit = cache.get(key);
     if (!options.force && hit && Date.now() - hit.at < ttlMs(hit.row)) {
       return Promise.resolve(hit.row);
     }
-    const pending = inflight.get(environmentId);
+    const pending = inflight.get(key);
     if (pending) return pending;
-    const work = limited(() => lookup(environmentId))
+    // A ref reads its environment's row first, so only its glab call takes a slot.
+    const work = (key.includes(" ") ? lookupRef(key) : limited(() => lookup(key)))
       .catch((cause): MergeRequestRow => ({
         outcome: "unavailable",
         message: `Could not read the merge request: ${tidy(String(cause))}`,
       }))
       .then((row) => {
-        const previous = cache.get(environmentId)?.row;
-        cache.set(environmentId, { row, at: Date.now() });
+        const previous = cache.get(key)?.row;
+        cache.delete(key);
+        cache.set(key, { row, at: Date.now() });
+        // Referenced MRs add keys without bound: drop the least recently read.
+        if (cache.size > 2000) cache.delete(cache.keys().next().value!);
         if (JSON.stringify(previous) !== JSON.stringify(row)) {
-          bb.rpc.experimental_invalidate([`mr:${environmentId}`]);
+          bb.rpc.experimental_invalidate([`mr:${key}`]);
         }
         return row;
       })
-      .finally(() => inflight.delete(environmentId));
-    inflight.set(environmentId, work);
+      .finally(() => inflight.delete(key));
+    inflight.set(key, work);
     return work;
+  }
+
+  // Message text by timeline message id, per thread. The metadata slot gives a
+  // message's id but not its seq, so a walk pages back from the newest message.
+  // shortcut: an edited message keeps its first text until the server restarts.
+  const texts = new Map<string, Map<string, string>>();
+  const walks = new Map<string, Promise<void>>();
+
+  /** Seqs of the thread's newest message events (user requests and agent replies). */
+  async function newestMessageSeqs(threadId: string): Promise<number[]> {
+    const events = await bb.sdk.threads.events.list({
+      threadId,
+      types: ["item/completed", "client/turn/requested"],
+      order: "desc",
+      limit: "40",
+    });
+    return events
+      .filter((event) => event.type === "client/turn/requested" || (event.data as { item?: { type?: string } }).item?.type === "agentMessage")
+      .map((event) => Number(event.seq))
+      .slice(0, 3);
+  }
+
+  /** Reads message pages from the newest back until a page brings nothing new. */
+  async function walk(threadId: string): Promise<void> {
+    const known = texts.get(threadId) ?? new Map<string, string>();
+    texts.delete(threadId);
+    texts.set(threadId, known);
+    if (texts.size > MAX_THREADS) texts.delete(texts.keys().next().value!);
+    let page: Awaited<ReturnType<typeof bb.sdk.threads.message>> | null = null;
+    for (const seq of await newestMessageSeqs(threadId)) {
+      // A request that was rejected has no message: try the next newest.
+      page = await bb.sdk.threads.message({ threadId, seq, before: PAGE }).catch(() => null);
+      if (page) break;
+    }
+    for (let pages = 1; page; pages += 1) {
+      const rows = [...page.before, page.message, ...page.after];
+      const fresh = rows.filter((row) => !known.has(row.id)).length;
+      for (const row of rows) known.set(row.id, row.text);
+      // Stop at known messages, the thread's start (a short page), or the cap.
+      if (fresh === 0 || page.before.length < PAGE || pages >= MAX_PAGES) break;
+      page = await bb.sdk.threads.message({ threadId, seq: page.before[0]!.messageSeq, before: PAGE });
+    }
+  }
+
+  /** `<threadId> <messageId>`: the merge request refs in that message. */
+  async function messageRefs(key: string): Promise<string[]> {
+    const split = key.indexOf(" ");
+    if (split <= 0) return [];
+    const threadId = key.slice(0, split);
+    const messageId = key.slice(split + 1);
+    if (!texts.get(threadId)?.has(messageId)) {
+      let pending = walks.get(threadId);
+      if (!pending) {
+        pending = walk(threadId).finally(() => walks.delete(threadId));
+        walks.set(threadId, pending);
+      }
+      await pending.catch((cause) => bb.log.warn(`Reading thread ${threadId} messages failed: ${tidy(String(cause))}`));
+    }
+    const text = texts.get(threadId)?.get(messageId);
+    return text ? findRefs(text) : [];
   }
 
   /** Marks one environment stale and tells the open clients to re-read it. */
@@ -187,6 +287,7 @@ export function createService(bb: BbPluginApi) {
 
   return {
     read,
+    messageRefs,
     forget,
     cache,
     markReady: (environmentId: string) =>
@@ -237,11 +338,37 @@ const environmentArg = [
 
 export default function (bb: BbPluginApi) {
   const service = createService(bb);
+  const settings = bb.settings.define({
+    messageReferences: {
+      type: "select",
+      label: "Merge requests in messages",
+      options: [...MESSAGE_REFERENCE_MODES],
+      experimental_optionLabels: {
+        both: "Chips and agent directive (default)",
+        chips: "Chips above messages that mention an MR",
+        directive: "Agent writes ::gitlab-mr directives",
+        off: "Off",
+      },
+      default: "both",
+    },
+  });
+  // agents.configure is synchronous: keep the current mode at hand.
+  let mode: MessageReferenceMode = "both";
+  void settings.get().then((values) => { mode = values.messageReferences as MessageReferenceMode; });
+  settings.onChange((values) => { mode = values.messageReferences as MessageReferenceMode; });
 
   bb.rpc.register(rpcContract, {
     mergeRequests: async ({ keys }) => {
       const rows = await Promise.all(keys.map((key) => service.read(key)));
       return Object.fromEntries(keys.map((key, index) => [key, rows[index]!]));
+    },
+    mergeRequestRefs: async ({ keys }) => {
+      const rows = await Promise.all(keys.map((key) => (key.includes(" ") ? service.read(key) : { outcome: "absent" as const })));
+      return Object.fromEntries(keys.map((key, index) => [key, rows[index]!]));
+    },
+    messageRefs: async ({ keys }) => {
+      const refs = await Promise.all(keys.map((key) => service.messageRefs(key)));
+      return Object.fromEntries(keys.map((key, index) => [key, { refs: refs[index]! }]));
     },
     markReady: async ({ environmentId }) => ({ mergeRequest: await service.markReady(environmentId) }),
     markDraft: async ({ environmentId }) => ({ mergeRequest: await service.markDraft(environmentId) }),
@@ -250,17 +377,19 @@ export default function (bb: BbPluginApi) {
 
   // While a client watches a row, keep it fresh: `read` honors each row's TTL
   // (20s while a pipeline runs, minutes otherwise, an hour once merged).
-  bb.rpc.experimental_whileWatched("mergeRequests", async (watched, signal) => {
-    if (!("key" in watched)) return;
-    while (!signal.aborted) {
-      await new Promise((resolve) => {
-        const timer = setTimeout(resolve, POLL_MS);
-        signal.addEventListener("abort", () => { clearTimeout(timer); resolve(undefined); }, { once: true });
-      });
-      if (signal.aborted) return;
-      await service.read(watched.key);
-    }
-  });
+  for (const method of ["mergeRequests", "mergeRequestRefs"] as const) {
+    bb.rpc.experimental_whileWatched(method, async (watched, signal) => {
+      if (!("key" in watched)) return;
+      while (!signal.aborted) {
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, POLL_MS);
+          signal.addEventListener("abort", () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+        });
+        if (signal.aborted) return;
+        await service.read(watched.key);
+      }
+    });
+  }
 
   // A finished turn often pushed a branch or opened an MR: look again.
   bb.events.on("thread.idle", async ({ thread }) => {
@@ -325,5 +454,9 @@ export default function (bb: BbPluginApi) {
     }),
   );
 
-  bb.agents.configure(() => ({ tools: [], skills: ["gitlab-mr-status"] }));
+  bb.agents.configure(() => ({
+    tools: [],
+    skills: ["gitlab-mr-status"],
+    ...(mode === "both" || mode === "directive" ? { instructions: DIRECTIVE_INSTRUCTIONS } : {}),
+  }));
 }

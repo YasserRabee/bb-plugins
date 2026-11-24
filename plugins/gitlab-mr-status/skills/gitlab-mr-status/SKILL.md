@@ -27,5 +27,11 @@ bb merge-request merge <environment-id> [--method merge|squash|rebase] [--json]
 - An offline machine, or `glab` missing or logged out there, reports
   `unavailable` with the reason. `glab` must be installed and logged in on each
   machine that has GitLab environments.
+- Chat messages that mention an MR (a full MR URL, or `!12` for the
+  thread's own project) get an MR chip with a hover card. When the setting
+  `messageReferences` is `both` or `directive`, write a merge request in a
+  reply as `::gitlab-mr{ref="!12"}` or
+  `::gitlab-mr{ref="https://<host>/<group>/<project>/-/merge_requests/12"}`
+  on its own line, never inside code.
 - Other plugins can read the keyed `mergeRequests` RPC method; run
   `bb plugin rpc inspect gitlab-mr-status` for its schema.
