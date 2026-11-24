@@ -2,35 +2,24 @@
 // `todo_write` tool. Each call replaces the thread's whole list (the same
 // model as Claude Desktop's TodoWrite). Lists live in this plugin's kv on the
 // BB server, keyed by thread id, so threads on any machine share one store.
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
-import { z } from "zod";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import {
+  CHECKLIST_CHANGED,
+  MAX_TODOS,
+  rpcContract,
+  todoWriteParameters,
+  type Todo,
+} from "./lib/contract.ts";
 
-export const MAX_TODOS = 50;
-const MAX_TEXT = 300;
+export {
+  CHECKLIST_CHANGED,
+  MAX_TODOS,
+  rpcContract,
+  todoWriteParameters,
+  type Todo,
+} from "./lib/contract.ts";
+
 const MAX_INSTRUCTIONS = 4096;
-
-const todoSchema = z.object({
-  content: z.string().trim().min(1).max(MAX_TEXT),
-  status: z.enum(["pending", "in_progress", "completed"]),
-  activeForm: z.string().trim().min(1).max(MAX_TEXT).optional(),
-});
-export type Todo = z.infer<typeof todoSchema>;
-
-export const todoWriteParameters = z.object({
-  todos: z.array(todoSchema).max(MAX_TODOS),
-});
-
-export const rpcContract = defineRpcContract({
-  checklist_get: {
-    input: z.object({ threadId: z.string().min(1).max(200) }),
-    // `pinned` drives the banner above the composer: a fully completed list
-    // stays pinned until the thread's next turn starts.
-    output: z.object({ todos: z.array(todoSchema), pinned: z.boolean() }),
-  },
-});
-
-/** Realtime channel; payload `{ threadId }` names the list that changed. */
-export const CHECKLIST_CHANGED = "checklist-changed";
 
 const key = (threadId: string) => `list:${threadId}`;
 const unpinnedKey = (threadId: string) => `unpinned:${threadId}`;
@@ -124,6 +113,7 @@ export default async function plugin(bb: BbPluginApi) {
       await bb.storage.kv.set(writtenKey(threadId), Date.now());
       await bb.storage.kv.delete(unpinnedKey(threadId));
       bb.realtime.publish(CHECKLIST_CHANGED, { threadId });
+      bb.rpc.experimental_invalidate([`list:${threadId}`]);
       return toolResult(todos);
     },
   });
@@ -189,5 +179,22 @@ export default async function plugin(bb: BbPluginApi) {
       todos: await readList(threadId),
       pinned: !(await bb.storage.kv.get<boolean>(unpinnedKey(threadId))),
     }),
+    checklist_progress: async ({ keys }) =>
+      Object.fromEntries(
+        await Promise.all(
+          keys.map(async (threadId) => {
+            const todos = await readList(threadId);
+            const active = todos.find((todo) => todo.status === "in_progress");
+            return [
+              threadId,
+              {
+                done: todos.filter((todo) => todo.status === "completed").length,
+                total: todos.length,
+                active: active ? (active.activeForm ?? active.content) : undefined,
+              },
+            ] as const;
+          }),
+        ),
+      ),
   });
 }

@@ -7,7 +7,7 @@ description: How the Checklist plugin's `todo_write` tool and thread Checklist t
 
 The Checklist plugin gives every thread one live checklist. The agent writes
 it with the `todo_write` tool; the user sees it in the thread's **Checklist**
-tab, as a `done/total` pill in the thread header, and pinned above the
+tab, as a `done/total` badge on the thread's row in the thread list, and pinned above the
 composer. The pinned banner shows a completed count, the step in progress, and
 the next three; a fully completed list collapses to "All N done" and stays
 pinned until the thread's next turn starts. The tab always has the full list.

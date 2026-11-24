@@ -1,22 +1,21 @@
-// bb-plugin-checklist — the thread's Checklist tab, a progress pill in the
-// thread header, and a list pinned above the composer. All read the list over RPC and refetch on the server's
+// bb-plugin-checklist — the thread's Checklist tab, a progress badge on its
+// thread row, and a list pinned above the composer. All read the list over RPC and refetch on the server's
 // "checklist-changed" signal for their thread.
 import { useCallback, useEffect, useState } from "react";
 import {
   definePluginApp,
   experimental_useAppPanel,
   experimental_usePluginId,
+  experimental_useRpcKeyedQuery,
   useRealtime,
   useComposer,
   useRpc,
-  type PluginThreadHeaderActionProps,
+  type ExperimentalThreadRowMetadataDataInput,
+  type ExperimentalThreadRowMetadataProps,
 } from "@get-bb/plugin-sdk/app";
-import type { rpcContract, Todo } from "./server";
+import { CHECKLIST_CHANGED, rpcContract, type Todo } from "@/lib/contract";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-
-// Must match CHECKLIST_CHANGED in server.ts (a value import would bundle it).
-const CHECKLIST_CHANGED = "checklist-changed";
 
 const TAB = {
   id: "checklist",
@@ -200,7 +199,7 @@ function ComposerChecklist() {
                 <button
                   type="button"
                   onClick={() =>
-                    panel.experimental_openTab({ surface: { kind: "current" }, tab: TAB })
+                    panel.openTab({ tab: TAB })
                   }
                   className="pl-6 text-xs text-muted-foreground hover:text-foreground"
                 >
@@ -215,24 +214,35 @@ function ComposerChecklist() {
   );
 }
 
-// ponytail: thread tabs have no badge API in SDK 0.6.79 (experimental_useBadge
-// is nav-panel only), so progress shows here; move it onto the tab if one lands.
-function ProgressPill({ threadId }: PluginThreadHeaderActionProps) {
-  const { todos } = useChecklist(threadId);
-  const panel = experimental_useAppPanel();
-  if (todos === null || todos.length === 0) return null;
-  const done = todos.filter((todo) => todo.status === "completed").length;
+type Progress = Record<string, { done: number; total: number; active?: string }> | undefined;
+
+function useProgress({ threads }: ExperimentalThreadRowMetadataDataInput): Progress {
+  const keys = threads.map((thread) => thread.id);
+  const { data } = experimental_useRpcKeyedQuery({
+    contract: rpcContract,
+    method: "checklist_progress",
+    keys,
+    enabled: keys.length > 0,
+  });
+  return data;
+}
+
+// The thread row's metadata line: "3/5" while a list exists.
+function ProgressBadge({ thread, data }: ExperimentalThreadRowMetadataProps<Progress>) {
+  const progress = data?.[thread.id];
+  if (!progress || progress.total === 0) return null;
+  const finished = progress.done === progress.total;
   return (
-    <button
-      type="button"
-      onClick={() => panel.experimental_openTab({ surface: { kind: "current" }, tab: TAB })}
-      aria-label={`Checklist: ${done} of ${todos.length} done`}
-      title="Open checklist"
-      className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs tabular-nums text-muted-foreground hover:bg-accent hover:text-foreground"
+    <span
+      title={progress.active ? `Checklist: ${progress.active}` : "Checklist"}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 text-xs tabular-nums",
+        finished ? "text-muted-foreground" : "text-foreground",
+      )}
     >
-      <Icon name="ListTodo" className="size-3.5" />
-      {done}/{todos.length}
-    </button>
+      <Icon name={finished ? "CircleCheck" : "ListTodo"} className="size-3" />
+      {progress.done}/{progress.total}
+    </span>
   );
 }
 
@@ -243,10 +253,11 @@ export default definePluginApp((app) => {
     icon: "ListTodo",
     component: ChecklistTab,
   });
-  app.slots.experimental_threadHeaderAction({
+  app.slots.experimental_threadRowMetadata<Progress>({
     id: "checklist-progress",
-    title: "Checklist progress",
-    component: ProgressPill,
+    order: 30,
+    useData: useProgress,
+    component: ProgressBadge,
   });
   app.composer.customize({
     id: "checklist",
