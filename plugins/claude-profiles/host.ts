@@ -93,7 +93,8 @@ export async function checkProfile(configDir: string | null, tokenFile: string |
     exists: await isDir(dir),
     // macOS keeps the token in the keychain, so an account record counts too.
     loggedIn: typeof oauth?.accessToken === "string" || email !== null,
-    email: login.email ?? email,
+    // With a token or API key the config dir's email belongs to another login: only trust Anthropic's answer.
+    email: login.email ?? (secret ? null : email),
     login,
   };
 }

@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 const ACCOUNTS_CHANGED = "claude-profiles-changed";
 const SYSTEM_PROFILE = "system";
 const SYSTEM_LABEL = "Machine login";
+const MACHINE_PROFILE = { id: SYSTEM_PROFILE, label: SYSTEM_LABEL, configDir: null, hasToken: false } as Profile;
 
 /** "Console (API key)": the label with the account's kind, for pickers. */
 const profileLabel = (profile: Profile) =>
@@ -459,7 +460,7 @@ function IconAction({
   );
 }
 
-function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void }) {
+function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit?: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [checks, setChecks] = useState<HostCheck[] | null>(null);
   const [checking, setChecking] = useState(false);
@@ -493,17 +494,21 @@ function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void 
         <IconAction tooltip="Check again" label={`Check ${profile.label} again`} onClick={check} disabled={checking}>
           <Icon name="claude-profiles/refresh" className={cn("size-4", checking && "animate-spin")} />
         </IconAction>
-        <IconAction tooltip="Edit" label={`Edit ${profile.label}`} onClick={onEdit}>
-          <Icon name="claude-profiles/edit" className="size-4" />
-        </IconAction>
-        <IconAction
-          tooltip="Delete"
-          label={`Delete ${profile.label}`}
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => void rpc.call("accounts_remove", { id: profile.id })}
-        >
-          <Icon name="Trash2" className="size-4" />
-        </IconAction>
+        {onEdit ? (
+          <>
+            <IconAction tooltip="Edit" label={`Edit ${profile.label}`} onClick={onEdit}>
+              <Icon name="claude-profiles/edit" className="size-4" />
+            </IconAction>
+            <IconAction
+              tooltip="Delete"
+              label={`Delete ${profile.label}`}
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => void rpc.call("accounts_remove", { id: profile.id })}
+            >
+              <Icon name="Trash2" className="size-4" />
+            </IconAction>
+          </>
+        ) : null}
       </div>
       {checks !== null ? <HostChecks checks={checks} /> : null}
       {checks?.some((c) => !c.ok) && loginCommand ? (
@@ -555,17 +560,13 @@ function SettingsSection() {
         {editing !== null ? (
           <ProfileForm initial={editing === "new" ? null : editing} onDone={() => setEditing(null)} />
         ) : null}
-        {sortedProfiles.length === 0 && editing === null ? (
-          <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-muted-foreground">
-            No accounts yet. Threads use this machine&apos;s own Claude login until you add one.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {sortedProfiles.map((profile) => (
-              <ProfileRow key={profile.id} profile={profile} onEdit={() => setEditing(profile)} />
-            ))}
-          </ul>
-        )}
+        <ul className="divide-y divide-border">
+          {/* The machine's own `claude /login`: checked like an account, but not editable here. */}
+          <ProfileRow profile={MACHINE_PROFILE} />
+          {sortedProfiles.map((profile) => (
+            <ProfileRow key={profile.id} profile={profile} onEdit={() => setEditing(profile)} />
+          ))}
+        </ul>
       </section>
       <section className="space-y-2">
         <h3 className="font-medium">Defaults</h3>

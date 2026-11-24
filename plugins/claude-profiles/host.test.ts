@@ -216,6 +216,9 @@ test("checkProfile checks the wrapper's secret over the config dir's login", asy
   const result = await checkProfile(dir, tokenFile, impl);
   assert.equal(result.login.verified, "ok");
   assert.equal(calls[0]?.headers["x-api-key"], "sk-ant-api03-wrapper-key");
+  // The config dir's email belongs to its own login, not to the wrapper's secret.
+  await writeFile(join(dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "dir@example.com" } }));
+  assert.equal((await checkProfile(dir, tokenFile, fakeFetch({ "/v1/models": { status: 200 } }).impl)).email, null);
 
   const dirLogin = fakeFetch({ "/api/oauth/profile": { status: 200, body: PROFILE }, "/api/oauth/usage": { status: 200, body: USAGE } });
   const viaDir = await checkProfile(dir, null, dirLogin.impl);
