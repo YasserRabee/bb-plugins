@@ -144,7 +144,7 @@ const COMPETING_ENV = [
 export function wrapperScript(tokenFile: string, selfPath: string, envName: string): string {
   return [
     "#!/bin/sh",
-    "# Written by the bb claude-accounts plugin. Do not edit.",
+    "# Written by the bb claude-profiles plugin. Do not edit.",
     `unset ${COMPETING_ENV.join(" ")}`,
     `${envName}=$(cat ${shellQuote(tokenFile)}) || exit 1`,
     `export ${envName}`,
@@ -154,7 +154,7 @@ export function wrapperScript(tokenFile: string, selfPath: string, envName: stri
     '  candidate="${dir:-.}/claude"',
     '  if [ -x "$candidate" ] && [ "$candidate" != "$self" ]; then exec "$candidate" "$@"; fi',
     "done",
-    'echo "claude-accounts: claude not found on PATH" >&2',
+    'echo "claude-profiles: claude not found on PATH" >&2',
     "exit 127",
     "",
   ].join("\n");

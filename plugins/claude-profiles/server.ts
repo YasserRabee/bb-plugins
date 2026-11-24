@@ -1,4 +1,4 @@
-// bb-plugin-claude-accounts — run Claude Code threads on different accounts.
+// bb-plugin-claude-profiles — run Claude Code threads on different accounts.
 // A profile is a CLAUDE_CONFIG_DIR, a `claude setup-token` token or a Console
 // API key, or a config dir plus one of those.
 // Each thread is pinned to one profile on its first run (new-thread pick →
@@ -35,7 +35,7 @@ const PROVIDER_ID = "claude-code";
 /** A new-thread composer pick waits this long for its thread's first run. */
 export const PENDING_TTL_MS = 2 * 60_000;
 /** Realtime channel; any change to profiles, defaults, or a thread's pick. */
-export const ACCOUNTS_CHANGED = "claude-accounts-changed";
+export const ACCOUNTS_CHANGED = "claude-profiles-changed";
 
 const profileChoiceSchema = z.union([profileIdSchema, z.literal(SYSTEM_PROFILE)]);
 const hostCheckSchema = z.object({
@@ -203,7 +203,7 @@ export default async function plugin(bb: BbPluginApi) {
     const reason = `Claude account: ${profile?.label ?? profileId}`;
     if (profile === null) {
       // A deleted profile must not silently fall back to another login.
-      return [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: `/claude-accounts/missing-profile/${profileId}`, reason }];
+      return [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: `/claude-profiles/missing-profile/${profileId}`, reason }];
     }
     const entries: ExperimentalPluginProviderEnvEntry[] = [];
     const configDir = await configDirOn(hostId, profile);
@@ -214,7 +214,7 @@ export default async function plugin(bb: BbPluginApi) {
         wrapperPath = await wrapperOn(hostId, profile);
       } catch (cause) {
         bb.log.warn(`token wrapper for ${profileId} on ${hostId} unavailable: ${errorText(cause)}`);
-        wrapperPath = `/claude-accounts/token-unavailable/${profileId}`;
+        wrapperPath = `/claude-profiles/token-unavailable/${profileId}`;
       }
       entries.push({ name: "BB_CLAUDE_CODE_EXECUTABLE", value: wrapperPath, reason });
     }
@@ -418,7 +418,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.cli.register(
     defineCli({
-      name: "claude-accounts",
+      name: "claude-profiles",
       summary: "Choose which Claude Code account each project and thread uses",
       commands: {
         list: cliCommand({
@@ -477,7 +477,7 @@ export default async function plugin(bb: BbPluginApi) {
             if (!(await removeProfile(positionals.id))) {
               throw new PluginCliError(`no account "${positionals.id}"`, {
                 code: "account_not_found",
-                hint: "Run `bb claude-accounts list`.",
+                hint: "Run `bb claude-profiles list`.",
               });
             }
             return { exitCode: 0, stdout: `removed ${positionals.id}\n` };
@@ -505,7 +505,7 @@ export default async function plugin(bb: BbPluginApi) {
           async run({ positionals, options }) {
             const account = positionals.account;
             if (account !== "none" && account !== SYSTEM_PROFILE && (await findProfile(account)) === null) {
-              throw new PluginCliError(`no account "${account}"`, { code: "account_not_found", hint: "Run `bb claude-accounts list`." });
+              throw new PluginCliError(`no account "${account}"`, { code: "account_not_found", hint: "Run `bb claude-profiles list`." });
             }
             await setDefault(options.project ?? null, account === "none" ? null : account);
             return { exitCode: 0, stdout: `default ${options.project ? `for ${options.project}` : "(global)"}: ${account}\n` };
