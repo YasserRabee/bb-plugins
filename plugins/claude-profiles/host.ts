@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk";
 import { hostContract } from "./contract.ts";
 import { secretEnvName, wrapperScript } from "./resolve.ts";
+import { parseProfile, parseUsage, type LoginStatus } from "./usage.ts";
 
 export function defaultConfigDir(): string {
   return process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
@@ -25,23 +26,75 @@ async function isDir(path: string): Promise<boolean> {
   return (await stat(path).catch(() => null))?.isDirectory() ?? false;
 }
 
+const API = "https://api.anthropic.com";
+const OAUTH_HEADERS = { "anthropic-beta": "oauth-2025-04-20", "Content-Type": "application/json" };
+
+/**
+ * Ask Anthropic about a credential with the calls Claude Code makes itself:
+ * the OAuth profile (also says whether the token is accepted) and usage, or
+ * the models list for an API key. The credential never leaves this function.
+ */
+export async function probeLogin(
+  credential: { secret: string; expiresAt: number | null } | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LoginStatus> {
+  const status: LoginStatus = { verified: "unknown", note: null, email: null, plan: null, usage: null, retryAfterSec: null };
+  if (credential === null) return { ...status, note: "No login found to check" };
+  const call = (path: string, headers: Record<string, string>) =>
+    fetchImpl(`${API}${path}`, { headers, signal: AbortSignal.timeout(10_000) });
+  try {
+    if (credential.secret.startsWith("sk-ant-api")) {
+      const response = await call("/v1/models?limit=1", { "x-api-key": credential.secret, "anthropic-version": "2023-06-01" });
+      if (response.status === 401) return { ...status, verified: "rejected", note: "Anthropic rejected this API key: revoked or expired" };
+      return response.ok ? { ...status, verified: "ok" } : { ...status, note: `Anthropic answered HTTP ${response.status}` };
+    }
+    if (credential.expiresAt !== null && Date.now() >= credential.expiresAt) {
+      // Claude Code refreshes it on its next run; refreshing here would rotate its tokens under it.
+      return { ...status, note: "Access token expired; Claude Code refreshes it on its next run" };
+    }
+    const auth = { ...OAUTH_HEADERS, Authorization: `Bearer ${credential.secret}` };
+    const profile = await call("/api/oauth/profile", auth);
+    if (profile.status === 401) return { ...status, verified: "rejected", note: "Anthropic rejected this login: revoked or expired" };
+    // 403: accepted, but without the profile scope (setup-tokens).
+    if (profile.ok) Object.assign(status, { verified: "ok" }, parseProfile(await profile.json()));
+    else if (profile.status === 403) status.verified = "ok";
+    else status.note = `Anthropic answered HTTP ${profile.status}`;
+    const usage = await call("/api/oauth/usage", auth);
+    if (usage.ok) status.usage = parseUsage(await usage.json());
+    else if (usage.status === 429) status.retryAfterSec = Number(usage.headers.get("retry-after")) || null;
+    return status;
+  } catch (cause) {
+    return { ...status, note: `Could not reach Anthropic: ${cause instanceof Error ? cause.message : String(cause)}` };
+  }
+}
+
 /** Login facts the same way Claude Code finds them for a config dir. */
-export async function checkProfile(configDir: string | null) {
+export async function checkProfile(configDir: string | null, tokenFile: string | null = null, fetchImpl: typeof fetch = fetch) {
   const dir = configDir ?? defaultConfigDir();
   const isDefault = configDir === null && !process.env.CLAUDE_CONFIG_DIR?.trim();
   const credentials = await readJson(join(dir, ".credentials.json"));
-  const oauth = credentials?.claudeAiOauth as { accessToken?: unknown } | undefined;
+  const oauth = credentials?.claudeAiOauth as { accessToken?: unknown; expiresAt?: unknown } | undefined;
   const globalConfig =
     (await readJson(join(dir, ".config.json"))) ??
     (await readJson(isDefault ? join(homedir(), ".claude.json") : join(dir, ".claude.json")));
   const account = globalConfig?.oauthAccount as { emailAddress?: unknown } | undefined;
   const email = typeof account?.emailAddress === "string" ? account.emailAddress : null;
+  // The wrapper's secret wins over the config dir's login, as it does in Claude Code.
+  const secret = tokenFile === null ? null : (await readFile(tokenFile, "utf8").catch(() => "")).trim();
+  // shortcut: macOS keeps the config dir's login in the Keychain, so it isn't probed there; read it with `security` if Mac hosts need limits.
+  const credential = secret
+    ? { secret, expiresAt: null }
+    : typeof oauth?.accessToken === "string"
+      ? { secret: oauth.accessToken, expiresAt: typeof oauth.expiresAt === "number" ? oauth.expiresAt : null }
+      : null;
+  const login = await probeLogin(credential, fetchImpl);
   return {
     configDir: dir,
     exists: await isDir(dir),
     // macOS keeps the token in the keychain, so an account record counts too.
     loggedIn: typeof oauth?.accessToken === "string" || email !== null,
-    email,
+    email: login.email ?? email,
+    login,
   };
 }
 
@@ -104,7 +157,11 @@ export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     describe: () => ({ homeDir: homedir(), defaultConfigDir: defaultConfigDir() }),
-    checkProfile: ({ configDir }) => checkProfile(configDir),
+    checkProfile: ({ configDir, profileId }, context) =>
+      checkProfile(
+        configDir,
+        profileId === null ? null : join(context.experimental_paths.dataDir, "profiles", profileId, "token"),
+      ),
     ensureTokenWrapper: ({ profileId, token }, context) =>
       ensureTokenWrapper(context.experimental_paths.dataDir, profileId, token),
     removeProfile: async ({ profileId }, context) => {
