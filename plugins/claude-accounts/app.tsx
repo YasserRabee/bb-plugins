@@ -145,13 +145,13 @@ function AccountSelect({
         )}
       >
         <span className="truncate">{current?.label}</span>
-        <Icon name="ChevronDown" className="size-3 shrink-0 opacity-60" />
+        <Icon name="claude-accounts/chevron-down" className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" mobileTitle={ariaLabel}>
         {options.map((option) => (
           <DropdownMenuItem key={option.id ?? ""} onSelect={() => onChange(option.id)}>
             <Icon
-              name="Check"
+              name="claude-accounts/check"
               className={cn("size-3.5", option === current ? "opacity-100" : "opacity-0")}
             />
             {option.label}
@@ -281,7 +281,7 @@ function NewThreadAccountPicker() {
   };
   return (
     <span className="inline-flex items-center gap-1">
-      <Icon name="Users" className="size-3.5 text-muted-foreground" />
+      <Icon name="claude-accounts/accounts" className="size-3.5 text-muted-foreground" />
       <AccountSelect
         ariaLabel="Claude account for this thread"
         accounts={accounts}
@@ -437,10 +437,10 @@ function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void 
           {[profile.configDir, profile.hasToken ? (profile.apiKey ? "API key" : "token") : null].filter(Boolean).join(" + ")}
         </span>
         <Button variant="ghost" size="icon" className="size-7" aria-label={`Recheck ${profile.label}`} onClick={check} disabled={checking}>
-          <Icon name="RefreshCw" className={cn("size-4", checking && "animate-spin")} />
+          <Icon name="claude-accounts/refresh" className={cn("size-4", checking && "animate-spin")} />
         </Button>
         <Button variant="ghost" size="icon" className="size-7" aria-label={`Edit ${profile.label}`} onClick={onEdit}>
-          <Icon name="Pencil" className="size-4" />
+          <Icon name="claude-accounts/edit" className="size-4" />
         </Button>
         <Button
           variant="ghost"
@@ -565,7 +565,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadAction({
     id: "claude-account",
     title: "Claude account",
-    icon: "Users",
+    icon: "claude-accounts/accounts",
     group: experimental_THREAD_ACTION_GROUPS.settings,
     order: 100,
     useData: useThreadActionData,
@@ -577,7 +577,7 @@ export default definePluginApp((app) => {
       return {
         label: "Claude account",
         detail: current === null ? "Not started" : labelOf(accounts, current),
-        icon: "Users",
+        icon: "claude-accounts/accounts",
         choices: {
           items: options.map((option) => ({
             id: option.id,

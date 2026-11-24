@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-claude-accounts",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "engines": {
     "bb": ">=0.48",
@@ -10,7 +10,14 @@
     "name": "Claude Accounts",
     "description": "Use several Claude Code accounts: a default per project, an override per thread.",
     "branding": {
-      "icon": "Users"
+      "icon": "./icons/accounts.svg",
+      "experimental_icons": {
+        "accounts": "./icons/accounts.svg",
+        "refresh": "./icons/refresh.svg",
+        "edit": "./icons/edit.svg",
+        "check": "./icons/check.svg",
+        "chevron-down": "./icons/chevron-down.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",
