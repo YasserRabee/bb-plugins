@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { checkProfile, ensureTokenWrapper, migrateTranscript } from "./host.ts";
-import { expandHome, normalizeToken, slugify } from "./resolve.ts";
+import { expandHome, normalizeApiKey, normalizeToken, slugify } from "./resolve.ts";
 
 test("migrateTranscript copies one session, never clobbering a newer copy", async () => {
   const root = await mkdtemp(join(tmpdir(), "claude-accounts-"));
@@ -51,6 +51,28 @@ test("token wrapper exports the token from a private file and runs claude", asyn
   assert.equal(output, "tok'en$1|--version x y\n");
 });
 
+test("an API key wrapper exports ANTHROPIC_API_KEY and drops competing logins", async () => {
+  const root = await mkdtemp(join(tmpdir(), "claude-accounts-"));
+  const key = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz";
+  const { wrapperPath } = await ensureTokenWrapper(join(root, "data"), "org", key);
+  const bin = join(root, "bin");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, "claude"),
+    '#!/bin/sh\necho "$ANTHROPIC_API_KEY|${CLAUDE_CODE_OAUTH_TOKEN-unset}|${ANTHROPIC_AUTH_TOKEN-unset}|${CLAUDE_CODE_USE_BEDROCK-unset}"\n',
+    { mode: 0o755 },
+  );
+  const output = execFileSync(wrapperPath, [], {
+    env: {
+      PATH: `${bin}:/usr/bin:/bin`,
+      CLAUDE_CODE_OAUTH_TOKEN: "machine-token",
+      ANTHROPIC_AUTH_TOKEN: "machine-bearer",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+    },
+  }).toString();
+  assert.equal(output, `${key}|unset|unset|unset\n`);
+});
+
 test("checkProfile reads a config dir's login", async () => {
   const dir = await mkdtemp(join(tmpdir(), "claude-accounts-"));
   assert.deepEqual(await checkProfile(dir), { configDir: dir, exists: true, loggedIn: false, email: null });
@@ -70,6 +92,10 @@ test("helpers", () => {
   assert.equal(normalizeToken(` ${token.slice(0, 30)}\n${token.slice(30)}\n`), token);
   // Only the last wrapped line of a token, or an API key.
   assert.throws(() => normalizeToken(token.slice(13)), /sk-ant-oat01-/);
-  assert.throws(() => normalizeToken("sk-ant-api03-abcdefghijklmnopqrstuvwxyz"));
+  assert.throws(() => normalizeToken("sk-ant-api03-abcdefghijklmnopqrstuvwxyz"), /Console API key/);
+  const key = "sk-ant-api03-abcdefghij_KLMNOPQRST-0123456789";
+  assert.equal(normalizeApiKey(` ${key.slice(0, 30)}\n${key.slice(30)}\n`), key);
+  assert.throws(() => normalizeApiKey(key.slice(13)), /sk-ant-api03-/);
+  assert.throws(() => normalizeApiKey(token), /setup-token/);
   assert.throws(() => normalizeToken("abcdefghijklmnop#qrstuvwxyz0123456789"), /authentication code/);
 });

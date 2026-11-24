@@ -1,5 +1,6 @@
 // bb-plugin-claude-accounts — run Claude Code threads on different accounts.
-// A profile is a CLAUDE_CONFIG_DIR, a `claude setup-token` token, or both.
+// A profile is a CLAUDE_CONFIG_DIR, a `claude setup-token` token or a Console
+// API key, or a config dir plus one of those.
 // Each thread is pinned to one profile on its first run (new-thread pick →
 // fork source → project default → global default → the machine's own login)
 // and the env resolver hands that profile to every Claude Code command.
@@ -20,6 +21,7 @@ import {
   SYSTEM_PROFILE,
   expandHome,
   initialChoice,
+  normalizeApiKey,
   normalizeToken,
   profileIdSchema,
   profileSchema,
@@ -59,8 +61,10 @@ export const rpcContract = defineRpcContract({
       id: profileIdSchema.optional(),
       label: z.string().trim().min(1).max(60),
       configDir: z.string().trim().min(1).max(500).nullable(),
-      // Omit to keep the stored token; null removes it.
+      // Omit to keep the stored token; null removes it. token and apiKey share
+      // one slot: setting either replaces the other.
       token: z.string().trim().min(1).max(4096).nullable().optional(),
+      apiKey: z.string().trim().min(1).max(4096).nullable().optional(),
     }),
     output: profileSchema,
   },
@@ -108,7 +112,8 @@ export const rpcContract = defineRpcContract({
 type Pending = { profileId: string; expiresAt: number };
 type WrapperCache = { wrapperPath: string; digest: string };
 
-const digest = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 16);
+// The version prefix rewrites wrappers written by an older wrapperScript.
+const digest = (token: string) => createHash("sha256").update(`v2:${token}`).digest("hex").slice(0, 16);
 const errorText = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 export default async function plugin(bb: BbPluginApi) {
@@ -179,7 +184,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   async function wrapperOn(hostId: string, profile: Profile): Promise<string> {
     const token = await kv.get<string>(`token:${profile.id}`);
-    if (!token) throw new Error(`Account "${profile.label}" has no token stored`);
+    if (!token) throw new Error(`Account "${profile.label}" has no ${profile.apiKey ? "API key" : "token"} stored`);
     const cacheKey = `wrapper:${hostId}:${profile.id}`;
     const cached = await kv.get<WrapperCache>(cacheKey);
     if (cached?.digest === digest(token)) return cached.wrapperPath;
@@ -281,16 +286,32 @@ export default async function plugin(bb: BbPluginApi) {
       for (let n = 2; profiles.some((profile) => profile.id === id); n += 1) id = `${base}-${n}`;
     }
     const existing = profiles.find((profile) => profile.id === id);
-    const token = typeof input.token === "string" ? normalizeToken(input.token) : input.token;
-    if (token !== undefined) {
-      if (token === null) await kv.delete(`token:${id}`);
-      else await kv.set(`token:${id}`, token);
+    if (typeof input.token === "string" && typeof input.apiKey === "string") {
+      throw new Error("An account takes a token or an API key, not both");
     }
-    const hasToken = token === undefined ? (existing?.hasToken ?? false) : token !== null;
+    // Validate before writing anything.
+    const secret =
+      typeof input.apiKey === "string"
+        ? normalizeApiKey(input.apiKey)
+        : typeof input.token === "string"
+          ? normalizeToken(input.token)
+          : input.token === null || input.apiKey === null
+            ? null
+            : undefined;
+    const hasToken = secret === undefined ? (existing?.hasToken ?? false) : secret !== null;
     if (input.configDir === null && !hasToken) {
-      throw new Error("An account needs a config dir, a token, or both");
+      throw new Error("An account needs a config dir, a token or API key, or both");
     }
-    const profile: Profile = { id, label: input.label, configDir: input.configDir, hasToken };
+    if (secret === null) await kv.delete(`token:${id}`);
+    else if (secret !== undefined) await kv.set(`token:${id}`, secret);
+    const apiKey = secret === undefined ? existing?.apiKey === true && hasToken : typeof input.apiKey === "string";
+    const profile: Profile = {
+      id,
+      label: input.label,
+      configDir: input.configDir,
+      hasToken,
+      ...(apiKey ? { apiKey: true } : {}),
+    };
     await kv.set("profiles", [...profiles.filter((p) => p.id !== id), profile]);
     changed();
     return profile;
@@ -390,7 +411,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   const describeProfile = (profile: Profile) =>
-    [profile.configDir ?? "default config dir", profile.hasToken ? "token" : null]
+    [profile.configDir ?? "default config dir", profile.hasToken ? (profile.apiKey ? "API key" : "token") : null]
       .filter(Boolean)
       .join(" + ");
   const json = (value: unknown) => ({ exitCode: 0, stdout: `${JSON.stringify(value, null, 2)}\n` });
@@ -417,7 +438,7 @@ export default async function plugin(bb: BbPluginApi) {
           },
         }),
         add: cliCommand({
-          summary: "Add or update an account (config dir, token, or both)",
+          summary: "Add or update an account (config dir, token or API key, or both)",
           positionals: [{ name: "label", description: "Display name, e.g. Work", required: true }],
           options: {
             id: { type: "string", description: "Update this existing account id" },
@@ -431,6 +452,11 @@ export default async function plugin(bb: BbPluginApi) {
               stdin: true,
               description: "A `claude setup-token` token; pipe it with --token-stdin",
             },
+            "api-key": {
+              type: "string",
+              stdin: true,
+              description: "An Anthropic Console API key (sk-ant-api03-…); pipe it with --api-key-stdin",
+            },
             json: { type: "boolean", description: "Emit machine-readable JSON" },
           },
           async run({ positionals, options }) {
@@ -439,6 +465,7 @@ export default async function plugin(bb: BbPluginApi) {
               label: positionals.label,
               configDir: options["config-dir"] ?? null,
               ...(options.token ? { token: options.token } : {}),
+              ...(options["api-key"] ? { apiKey: options["api-key"] } : {}),
             });
             return options.json ? json(profile) : { exitCode: 0, stdout: `saved ${profile.id}\n` };
           },

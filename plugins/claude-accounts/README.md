@@ -2,12 +2,13 @@
 
 Use several Claude Code accounts in bb: a default account per project, and a
 per-thread override. Each Claude Code command a thread runs gets its
-account's `CLAUDE_CONFIG_DIR` (and, for token accounts, a wrapper as
-`BB_CLAUDE_CODE_EXECUTABLE`) through
+account's `CLAUDE_CONFIG_DIR` (and, for accounts with a `claude setup-token`
+token or a Console API key, a wrapper as `BB_CLAUDE_CODE_EXECUTABLE` that
+exports `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`) through
 `bb.providers.experimental_contributeEnv("claude-code", …)`.
 
-- `resolve.ts`: profile shapes, the pinning order, and the token wrapper
-  script. Pure, shared by every entry.
+- `resolve.ts`: profile shapes, token and API key validation, the pinning
+  order, and the wrapper script. Pure, shared by every entry.
 - `server.ts`: profiles and defaults in kv, tokens in kv (server-only), the
   env resolver, thread pinning in thread plugin metadata, the RPC methods, and
   the `bb claude-accounts` CLI.
@@ -20,7 +21,7 @@ account's `CLAUDE_CONFIG_DIR` (and, for token accounts, a wrapper as
 
 ```sh
 npm install
-npm test           # pinning order, consent, token never exposed, transcript copy
+npm test           # pinning order, consent, secrets never exposed, transcript copy
 npm run typecheck
 bb plugin build
 bb plugin install .
