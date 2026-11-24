@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-gitlab-mr-status",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "engines": {
     "bb": ">=0.48",
@@ -10,7 +10,19 @@
     "name": "GitLab MR Status",
     "description": "GitLab merge request status and actions for each environment's branch.",
     "branding": {
-      "icon": "GitMerge"
+      "icon": "./icons/git-merge.svg",
+      "experimental_icons": {
+        "git-merge": "./icons/git-merge.svg",
+        "git-pull-request-closed": "./icons/git-pull-request-closed.svg",
+        "git-pull-request-draft": "./icons/git-pull-request-draft.svg",
+        "git-pull-request": "./icons/git-pull-request.svg",
+        "circle-check": "./icons/circle-check.svg",
+        "circle-x": "./icons/circle-x.svg",
+        "circle-dot": "./icons/circle-dot.svg",
+        "circle-play": "./icons/circle-play.svg",
+        "circle-slash": "./icons/circle-slash.svg",
+        "triangle-alert": "./icons/triangle-alert.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",

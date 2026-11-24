@@ -11,29 +11,29 @@ export interface Look {
 export function stateLook(state: MergeRequest["state"]): Look {
   switch (state) {
     case "merged":
-      return { icon: "GitMerge", tone: "text-purple-500", label: "Merged" };
+      return { icon: "gitlab-mr-status/git-merge", tone: "text-purple-500", label: "Merged" };
     case "closed":
-      return { icon: "GitPullRequestClosed", tone: "text-red-500", label: "Closed" };
+      return { icon: "gitlab-mr-status/git-pull-request-closed", tone: "text-red-500", label: "Closed" };
     case "draft":
-      return { icon: "GitPullRequestDraft", tone: "text-muted-foreground", label: "Draft" };
+      return { icon: "gitlab-mr-status/git-pull-request-draft", tone: "text-muted-foreground", label: "Draft" };
     default:
-      return { icon: "GitPullRequest", tone: "text-emerald-500", label: "Open" };
+      return { icon: "gitlab-mr-status/git-pull-request", tone: "text-emerald-500", label: "Open" };
   }
 }
 
 export function pipelineLook(state: PipelineState): Look | null {
   switch (state) {
     case "passed":
-      return { icon: "CircleCheck", tone: "text-emerald-500", label: "Pipeline passed" };
+      return { icon: "gitlab-mr-status/circle-check", tone: "text-emerald-500", label: "Pipeline passed" };
     case "failed":
-      return { icon: "CircleX", tone: "text-red-500", label: "Pipeline failed" };
+      return { icon: "gitlab-mr-status/circle-x", tone: "text-red-500", label: "Pipeline failed" };
     case "running":
     case "pending":
-      return { icon: "CircleDot", tone: "text-yellow-500", label: state === "running" ? "Pipeline running" : "Pipeline pending" };
+      return { icon: "gitlab-mr-status/circle-dot", tone: "text-yellow-500", label: state === "running" ? "Pipeline running" : "Pipeline pending" };
     case "manual":
-      return { icon: "CirclePlay", tone: "text-muted-foreground", label: "Pipeline waiting for a manual job" };
+      return { icon: "gitlab-mr-status/circle-play", tone: "text-muted-foreground", label: "Pipeline waiting for a manual job" };
     case "canceled":
-      return { icon: "CircleSlash", tone: "text-muted-foreground", label: "Pipeline canceled" };
+      return { icon: "gitlab-mr-status/circle-slash", tone: "text-muted-foreground", label: "Pipeline canceled" };
     default:
       return null;
   }
