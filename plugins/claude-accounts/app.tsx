@@ -27,6 +27,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -115,24 +121,36 @@ function AccountSelect({
   className?: string;
   ariaLabel: string;
 }) {
+  const options: { id: string | null; label: string }[] = [
+    ...(emptyLabel !== undefined ? [{ id: null, label: emptyLabel }] : []),
+    { id: SYSTEM_PROFILE, label: SYSTEM_LABEL },
+    ...(accounts?.profiles ?? []),
+  ];
+  const current = options.find((option) => option.id === value) ?? options[0];
   return (
-    <select
-      aria-label={ariaLabel}
-      value={value ?? ""}
-      onChange={(event) => onChange(event.target.value === "" ? null : event.target.value)}
-      className={cn(
-        "h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground",
-        className,
-      )}
-    >
-      {emptyLabel !== undefined ? <option value="">{emptyLabel}</option> : null}
-      <option value={SYSTEM_PROFILE}>{SYSTEM_LABEL}</option>
-      {accounts?.profiles.map((profile) => (
-        <option key={profile.id} value={profile.id}>
-          {profile.label}
-        </option>
-      ))}
-    </select>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={ariaLabel}
+        className={cn(
+          "inline-flex h-8 min-w-0 items-center gap-1 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          className,
+        )}
+      >
+        <span className="truncate">{current?.label}</span>
+        <Icon name="ChevronDown" className="size-3 shrink-0 opacity-60" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" mobileTitle={ariaLabel}>
+        {options.map((option) => (
+          <DropdownMenuItem key={option.id ?? ""} onSelect={() => onChange(option.id)}>
+            <Icon
+              name="Check"
+              className={cn("size-3.5", option.id === value ? "opacity-100" : "opacity-0")}
+            />
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
