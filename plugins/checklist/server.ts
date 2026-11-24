@@ -190,7 +190,8 @@ export default async function plugin(bb: BbPluginApi) {
               {
                 done: todos.filter((todo) => todo.status === "completed").length,
                 total: todos.length,
-                active: active ? (active.activeForm ?? active.content) : undefined,
+                // RPC results must be JSON: omit the key rather than send undefined.
+                ...(active ? { active: active.activeForm ?? active.content } : {}),
               },
             ] as const;
           }),
