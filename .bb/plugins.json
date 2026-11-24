@@ -14,6 +14,10 @@
     {
       "name": "marmalade",
       "source": "./plugins/marmalade"
+    },
+    {
+      "name": "claude-accounts",
+      "source": "./plugins/claude-accounts"
     }
   ]
 }
