@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 // Must match server.ts (a value import would bundle the server).
@@ -244,7 +245,7 @@ function ThreadAccountRow({ threadId }: ExperimentalThreadInfoProps) {
   if (choice === undefined || accounts === null) return null;
   if (accounts.profiles.length === 0 && choice.profileId === SYSTEM_PROFILE) return null;
   return (
-    <DetailRow label="Claude account" icon="Users">
+    <DetailRow label="Claude account" icon="claude-accounts/accounts">
       {labelOf(accounts, choice.profileId)}{" "}
       <span className="text-muted-foreground">({SOURCE_LABEL[choice.source]})</span>
     </DetailRow>
@@ -410,6 +411,25 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+/** An icon-only button: the tooltip shows its action, the aria-label names it fully. */
+function IconAction({
+  tooltip,
+  label,
+  className,
+  ...props
+}: { tooltip: string; label: string; className?: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className={cn("size-7", className)} aria-label={label} {...props} />
+        </TooltipTrigger>
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [checks, setChecks] = useState<HostCheck[] | null>(null);
@@ -436,21 +456,20 @@ function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void 
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
           {[profile.configDir, profile.hasToken ? (profile.apiKey ? "API key" : "token") : null].filter(Boolean).join(" + ")}
         </span>
-        <Button variant="ghost" size="icon" className="size-7" aria-label={`Recheck ${profile.label}`} onClick={check} disabled={checking}>
+        <IconAction tooltip="Check again" label={`Check ${profile.label} again`} onClick={check} disabled={checking}>
           <Icon name="claude-accounts/refresh" className={cn("size-4", checking && "animate-spin")} />
-        </Button>
-        <Button variant="ghost" size="icon" className="size-7" aria-label={`Edit ${profile.label}`} onClick={onEdit}>
+        </IconAction>
+        <IconAction tooltip="Edit" label={`Edit ${profile.label}`} onClick={onEdit}>
           <Icon name="claude-accounts/edit" className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 text-muted-foreground hover:text-destructive"
-          aria-label={`Remove ${profile.label}`}
+        </IconAction>
+        <IconAction
+          tooltip="Delete"
+          label={`Delete ${profile.label}`}
+          className="text-muted-foreground hover:text-destructive"
           onClick={() => void rpc.call("accounts_remove", { id: profile.id })}
         >
           <Icon name="Trash2" className="size-4" />
-        </Button>
+        </IconAction>
       </div>
       {checks !== null ? <HostChecks checks={checks} /> : null}
       {checks?.some((c) => !c.ok) && loginCommand ? (
