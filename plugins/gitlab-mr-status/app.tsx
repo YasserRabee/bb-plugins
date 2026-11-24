@@ -162,7 +162,7 @@ function MergeRequestBanner() {
     // would otherwise look the same as a branch with no merge request.
     return (
       <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground" title={row.message}>
-        <Icon name="TriangleAlert" className="size-3.5 shrink-0 text-yellow-500" />
+        <Icon name="gitlab-mr-status/triangle-alert" className="size-3.5 shrink-0 text-yellow-500" />
         <span className="min-w-0 truncate">GitLab merge request unavailable: {row.message}</span>
       </div>
     );
@@ -180,7 +180,7 @@ function MergeRequestBanner() {
         <span className="shrink-0 tabular-nums">!{mr.iid}</span>
         <span className="min-w-0 truncate">{mr.title}</span>
       </UrlLink>
-      {mr.autoMerge ? <Chip look={{ icon: "GitMerge", tone: "text-emerald-500" }}>Auto-merge</Chip> : null}
+      {mr.autoMerge ? <Chip look={{ icon: "gitlab-mr-status/git-merge", tone: "text-emerald-500" }}>Auto-merge</Chip> : null}
       {pipeline ? <Chip look={pipeline}>{mr.pipeline.state}</Chip> : null}
       {approvals ? <span className="shrink-0">{approvals}</span> : null}
       {attention && mr.state !== "merged" ? <span className="shrink-0">{attention}</span> : null}
@@ -197,7 +197,7 @@ function MergeRequestBanner() {
 function MergeRequestCardRows({ environment }: ExperimentalThreadContextCardProps) {
   const row = useRow(environment?.id);
   if (row?.outcome === "unavailable") {
-    return <ContextCardRow icon={"TriangleAlert" as never} label="Merge request unavailable" title={row.message} />;
+    return <ContextCardRow icon={"gitlab-mr-status/triangle-alert" as never} label="Merge request unavailable" title={row.message} />;
   }
   const mr = row?.outcome === "available" ? row.mergeRequest : null;
   if (!mr) return null;
@@ -259,9 +259,9 @@ function MergeRequestBadge({ thread, data }: ExperimentalThreadRowMetadataProps<
       <Icon name={look.icon} className="size-3" />!{mr.iid}
       {mr.state === "open" || mr.state === "draft" ? (
         trouble ? (
-          <Icon name="CircleX" className="size-3 text-red-500" />
+          <Icon name="gitlab-mr-status/circle-x" className="size-3 text-red-500" />
         ) : pipeline && (mr.pipeline.state === "running" || mr.pipeline.state === "pending") ? (
-          <Icon name="CircleDot" className="size-3 text-yellow-500" />
+          <Icon name="gitlab-mr-status/circle-dot" className="size-3 text-yellow-500" />
         ) : null
       ) : null}
     </span>
@@ -300,7 +300,7 @@ function MergeRequestCard({ mr }: { mr: MergeRequest }) {
         <Chip look={look}>{look.label}</Chip>
         {pipeline ? <Chip look={pipeline}>{pipeline.label}</Chip> : null}
         {approvals ? <span>{approvals}</span> : null}
-        {mr.autoMerge ? <Chip look={{ icon: "GitMerge", tone: "text-emerald-500" }}>Auto-merge</Chip> : null}
+        {mr.autoMerge ? <Chip look={{ icon: "gitlab-mr-status/git-merge", tone: "text-emerald-500" }}>Auto-merge</Chip> : null}
       </span>
       <span className="truncate font-mono text-muted-foreground">
         {mr.sourceBranch} → {mr.targetBranch}

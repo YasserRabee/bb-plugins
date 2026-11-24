@@ -16,6 +16,10 @@ counterpart of bb's bundled GitHub PR Status.
 - `lib/contract.ts` is the RPC contract and data shapes, shared by both sides.
 - `lib/gitlab.ts` maps GitLab's merge request JSON to the plugin's shape (pure,
   fully tested). `lib/present.ts` is how each state looks.
+- `icons/` holds the plugin's own glyphs (lucide-static 1.79.0, ISC), declared
+  in `bb.branding.experimental_icons` and used as `gitlab-mr-status/<name>`.
+  A host icon name bb does not know renders as its Zap fallback, so the
+  plugin ships every icon it uses instead of guessing host names.
 - `host.ts` runs `glab` on the machine that owns the environment, resolving the
   GitLab project from its git remote and finding the MR by upstream branch,
   remote branch at HEAD, local branch, then commit. `server.ts` caches each row (20s while a pipeline runs, minutes
