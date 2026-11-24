@@ -97,6 +97,18 @@ const failed = (cause: unknown) =>
     ? { failure: cause.failure, message: cause.message }
     : { failure: "other" as const, message: tidy(String(cause)) };
 
+/** A merge request's detail and approvals JSON, as GitLab returns them. */
+async function details(host: string, path: string, iid: number, signal: AbortSignal) {
+  const base = `projects/${encodeURIComponent(path)}/merge_requests/${iid}`;
+  const api = (route: string) => glab(["api", "--hostname", host, route], signal);
+  const [detail, approvals] = await Promise.all([
+    api(base),
+    // Approval rules are a paid tier: a failure only hides the count.
+    api(`${base}/approvals`).catch(() => null),
+  ]);
+  return { kind: "found" as const, detail, approvals };
+}
+
 const ACTION_ARGS = {
   ready: ["--ready"],
   draft: ["--draft"],
@@ -136,15 +148,31 @@ export default experimental_defineHostEntry({
           }
         }
         if (!picked) return { kind: "none" as const };
-        const [detail, approvals] = await Promise.all([
-          api(`${base}/${picked.iid}`),
-          // Approval rules are a paid tier: a failure only hides the count.
-          api(`${base}/${picked.iid}/approvals`).catch(() => null),
-        ]);
-        return { kind: "found" as const, detail, approvals };
+        return await details(found.host, found.path, picked.iid, signal);
       } catch (cause) {
         const failure = failed(cause);
         if (failure.failure === "absent") return { kind: "none" as const };
+        return { kind: "failed" as const, ...failure };
+      }
+    },
+    fetch: async ({ cwd, host, path, iid }, { signal }) => {
+      try {
+        let target: { host: string; path: string } | null;
+        if (host && path) {
+          // Only hosts glab is logged in to: other links are not ours to resolve.
+          target = (await glabHosts(signal)).hosts.includes(host.toLowerCase()) ? { host, path } : null;
+        } else {
+          const found = cwd ? await project(cwd, signal) : null;
+          target = found?.loggedIn ? found : null;
+        }
+        if (!target) return { kind: "none" as const };
+        return await details(target.host, target.path, iid, signal);
+      } catch (cause) {
+        const failure = failed(cause);
+        // A number that is not a merge request is just text, not an error.
+        if (failure.failure === "absent" || (failure.failure === "other" && /\b404\b|not found/i.test(failure.message))) {
+          return { kind: "none" as const };
+        }
         return { kind: "failed" as const, ...failure };
       }
     },

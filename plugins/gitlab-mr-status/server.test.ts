@@ -13,7 +13,8 @@ import {
   type RawMergeRequest,
 } from "./lib/gitlab.ts";
 import { summary } from "./lib/present.ts";
-import { ttlMs } from "./server.ts";
+import { findRefs, parseRef, sameMergeRequest } from "./lib/refs.ts";
+import { createService, ttlMs } from "./server.ts";
 
 const raw = (overrides: Partial<RawMergeRequest> = {}): RawMergeRequest =>
   rawMergeRequestSchema.parse({
@@ -138,4 +139,71 @@ test("remotes parse to host and project path", () => {
 test("glab auth status yields its hosts", () => {
   const out = "gitlab.com\n  ✓ Logged in to gitlab.com as yasserrabee (/home/x/config.yml)\n  ✓ Git operations configured\ngit.corp.io\n  x failed\n";
   assert.deepEqual(parseGlabHosts(out), ["gitlab.com", "git.corp.io"]);
+});
+
+test("message refs: MR URLs on any host and bare !n tokens, in order", () => {
+  const text =
+    "See https://git.corp.io:8443/team/sub/app/-/merge_requests/7/diffs#note_1 and !12, (!13) or [!14](x).\n" +
+    "Also https://gitlab.com/g/p/-/merge_requests/12 and !12 again.";
+  assert.deepEqual(findRefs(text), [
+    "https://git.corp.io:8443/team/sub/app/-/merge_requests/7",
+    "!12",
+    "!13",
+    "!14",
+    "https://gitlab.com/g/p/-/merge_requests/12",
+  ]);
+});
+
+test("message refs: no false positives from code, prose or other syntax", () => {
+  const text = [
+    "Great!1 x!2 $!3 !4abc !5-x !6.5 !== !! ![img](a.png)",
+    "`!7` and `https://gitlab.com/g/p/-/merge_requests/8`",
+    "```sh\ngit log !9\nhttps://gitlab.com/g/p/-/merge_requests/10\n```",
+    "https://github.com/o/r/pull/11 https://gitlab.com/g/p/-/issues/12",
+    '::gitlab-mr{ref="https://gitlab.com/g/p/-/merge_requests/13"}',
+  ].join("\n");
+  assert.deepEqual(findRefs(text), []);
+});
+
+test("message refs: at most ten", () => {
+  assert.equal(findRefs(Array.from({ length: 20 }, (_, i) => `!${i + 1}`).join(" ")).length, 10);
+});
+
+test("parseRef and sameMergeRequest", () => {
+  assert.deepEqual(parseRef(" !12 "), { iid: 12 });
+  assert.deepEqual(parseRef("https://GitLab.com/g/p/-/merge_requests/3?tab=x"), { host: "gitlab.com", path: "g/p", iid: 3 });
+  assert.equal(parseRef("!x"), null);
+  assert.equal(parseRef("https://gitlab.com/g/p/-/merge_requests/3 trailing"), null);
+  const url = "https://gitlab.com/g/p/-/merge_requests/12";
+  assert.equal(sameMergeRequest(url, 12, { iid: 12 }), true);
+  assert.equal(sameMergeRequest(url, 12, { iid: 13 }), false);
+  assert.equal(sameMergeRequest(url, 12, { host: "gitlab.com", path: "g/p", iid: 12 }), true);
+  assert.equal(sameMergeRequest(url, 12, { host: "gitlab.com", path: "g/other", iid: 12 }), false);
+});
+
+test("message refs walk message pages back from the newest message", async () => {
+  // 45 messages with seq 1..45; message i says "!i". Pages hold 20 before + the target.
+  const all = Array.from({ length: 45 }, (_, i) => ({ id: `m${i + 1}`, text: `fix !${i + 1}`, messageSeq: i + 1 }));
+  let pages = 0;
+  const bb = {
+    hosts: { experimental_client: () => ({}) },
+    log: { warn() {} },
+    sdk: {
+      threads: {
+        events: { list: async () => [{ type: "item/completed", seq: 45, data: { item: { type: "agentMessage" } } }] },
+        message: async ({ seq, before }: { seq: number; before: number }) => {
+          pages += 1;
+          const at = seq - 1;
+          return { before: all.slice(Math.max(0, at - before), at), message: all[at], after: [] };
+        },
+      },
+    },
+  } as never;
+  const service = createService(bb);
+  assert.deepEqual(await service.messageRefs("thr m3"), ["!3"]);
+  assert.equal(pages, 3);
+  assert.deepEqual(await service.messageRefs("thr m44"), ["!44"]);
+  assert.equal(pages, 3, "known messages need no new read");
+  assert.deepEqual(await service.messageRefs("thr missing"), []);
+  assert.deepEqual(await service.messageRefs("bad-key"), []);
 });

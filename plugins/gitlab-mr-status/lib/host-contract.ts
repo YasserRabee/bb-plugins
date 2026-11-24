@@ -34,6 +34,29 @@ export const hostContract = defineRpcContract({
     ]),
     experimental_retryable: true,
   },
+  /** One merge request by number: in `host`/`path`, or in `cwd`'s GitLab project. */
+  fetch: {
+    input: z.object({
+      cwd: z.string().min(1).nullable(),
+      host: z.string().min(1).max(253).optional(),
+      path: z.string().min(1).max(400).optional(),
+      iid: z.number().int().positive(),
+    }),
+    output: z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("found"),
+        detail: z.string(),
+        approvals: z.string().nullable(),
+      }),
+      z.object({ kind: z.literal("none") }),
+      z.object({
+        kind: z.literal("failed"),
+        failure: failureKindSchema,
+        message: z.string(),
+      }),
+    ]),
+    experimental_retryable: true,
+  },
   act: {
     input: z.object({
       cwd: z.string().min(1),

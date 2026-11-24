@@ -1,7 +1,10 @@
 // bb-plugin-gitlab-mr-status — GitLab merge request status in four places:
 // a banner above the composer, rows in the thread context card (and the Info
 // tab), and a badge on thread rows. All read the keyed `mergeRequests` method.
-import { useState } from "react";
+// Chat messages get MR chips with hover cards: chips above messages that
+// mention an MR (`messageRefs`) and the agent's `::gitlab-mr` directive, both
+// reading `mergeRequestRefs`.
+import { useState, type ReactNode } from "react";
 import {
   UrlLink,
   definePluginApp,
@@ -12,10 +15,13 @@ import {
   experimental_useRpcMutation as useRpcMutation,
   experimental_useSidebarThreads as useSidebarThreads,
   useComposer,
+  useSettings,
+  type ExperimentalMessageMetadataProps,
   type ExperimentalThreadContextCardProps,
   type ExperimentalThreadInfoProps,
   type ExperimentalThreadRowMetadataDataInput,
   type ExperimentalThreadRowMetadataProps,
+  type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
 import {
   MERGE_METHODS,
@@ -31,6 +37,7 @@ import {
   stateLook,
   summary,
 } from "./lib/present";
+import { formatRef, parseRef } from "./lib/refs";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
@@ -261,7 +268,113 @@ function MergeRequestBadge({ thread, data }: ExperimentalThreadRowMetadataProps<
   );
 }
 
+// ── Merge requests in chat messages ────────────────────────────────────
+
+/** The `messageReferences` setting: "both" while loading, like its default. */
+function useMode() {
+  const mode = useSettings().values?.messageReferences;
+  return {
+    chips: mode === undefined || mode === "both" || mode === "chips",
+    directive: mode === undefined || mode === "both" || mode === "directive",
+  };
+}
+
+/** Everything the composer banner shows, as a hover card under the chip. */
+function MergeRequestCard({ mr }: { mr: MergeRequest }) {
+  const look = stateLook(mr.state);
+  const pipeline = pipelineLook(mr.pipeline.state);
+  const approvals = approvalsLabel(mr);
+  const attention = mr.state === "open" || mr.state === "draft" ? attentionLabel(mr.attention) : null;
+  const ref = parseRef(mr.url);
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none invisible absolute left-0 top-full z-50 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-1.5 rounded-lg border bg-popover p-3 text-left text-xs text-popover-foreground opacity-0 shadow-lg transition-opacity group-focus-within/mr:visible group-focus-within/mr:opacity-100 group-hover/mr:visible group-hover/mr:opacity-100"
+    >
+      <span className="truncate text-muted-foreground">
+        {ref && "path" in ref ? ref.path : ""}!{mr.iid}
+        {mr.author ? ` · ${mr.author}` : ""}
+      </span>
+      <span className="text-sm font-medium leading-snug">{mr.title}</span>
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Chip look={look}>{look.label}</Chip>
+        {pipeline ? <Chip look={pipeline}>{pipeline.label}</Chip> : null}
+        {approvals ? <span>{approvals}</span> : null}
+        {mr.autoMerge ? <Chip look={{ icon: "GitMerge", tone: "text-emerald-500" }}>Auto-merge</Chip> : null}
+      </span>
+      <span className="truncate font-mono text-muted-foreground">
+        {mr.sourceBranch} → {mr.targetBranch}
+      </span>
+      {attention ? <span>{attention}</span> : null}
+    </span>
+  );
+}
+
+/** One referenced MR as a chip with its hover card, or `fallback` until it resolves. */
+function RefChip({ environmentId, refText, fallback }: { environmentId: string; refText: string; fallback: ReactNode }) {
+  const key = `${environmentId} ${refText}`;
+  const { data } = useRpcKeyedQuery({ contract: rpcContract, method: "mergeRequestRefs", keys: [key] });
+  const row = (data as Record<string, MergeRequestRow> | undefined)?.[key];
+  if (row?.outcome !== "available") return <>{fallback}</>;
+  const mr = row.mergeRequest;
+  const look = stateLook(mr.state);
+  return (
+    <span className="group/mr relative inline-flex max-w-full align-middle">
+      <UrlLink
+        href={mr.url}
+        aria-label={summary(mr)}
+        className="inline-flex min-w-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs no-underline hover:bg-accent"
+      >
+        <Icon name={look.icon} className={cn("size-3.5 shrink-0", look.tone)} />
+        <span className={cn("shrink-0 tabular-nums", look.tone)}>!{mr.iid}</span>
+        <span className="min-w-0 max-w-64 truncate text-foreground">{mr.title}</span>
+      </UrlLink>
+      <MergeRequestCard mr={mr} />
+    </span>
+  );
+}
+
+/** Chips above a message for each MR it mentions; refs that do not resolve show nothing. */
+function MessageMergeRequests({ message }: ExperimentalMessageMetadataProps) {
+  const { chips } = useMode();
+  const environmentId = useThreadEnvironmentId(message.threadId);
+  const key = `${message.threadId} ${message.id}`;
+  const enabled = chips && environmentId !== null;
+  const { data } = useRpcKeyedQuery({ contract: rpcContract, method: "messageRefs", keys: enabled ? [key] : [], enabled });
+  const refs = enabled ? ((data as Record<string, { refs: string[] }> | undefined)?.[key]?.refs ?? []) : [];
+  if (!environmentId || refs.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pb-1">
+      {refs.map((ref) => (
+        <RefChip key={ref} environmentId={environmentId} refText={ref} fallback={null} />
+      ))}
+    </div>
+  );
+}
+
+/** `::gitlab-mr{ref="!12"}` or `ref="https://…/-/merge_requests/12"`, written by the agent. */
+function MergeRequestDirective({ attributes, source, message }: PluginMessageDirectiveProps) {
+  const { directive } = useMode();
+  const environmentId = useThreadEnvironmentId(message.threadId);
+  const ref = parseRef(attributes.ref ?? "");
+  if (!ref) return <>{source}</>;
+  const text = formatRef(ref);
+  const plain = "host" in ref ? <UrlLink href={text}>{text}</UrlLink> : <span>{text}</span>;
+  if (!directive || !environmentId) return <div>{plain}</div>;
+  return (
+    <div>
+      <RefChip environmentId={environmentId} refText={text} fallback={plain} />
+    </div>
+  );
+}
+
 export default definePluginApp((app) => {
+  app.slots.experimental_messageMetadata({
+    id: "merge-requests",
+    placement: "above",
+    component: MessageMergeRequests,
+  });
+  app.slots.messageDirective({ id: "gitlab-mr", component: MergeRequestDirective });
   app.composer.customize({
     id: "gitlab-mr-status",
     scopes: ["thread"],
