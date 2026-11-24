@@ -1,4 +1,4 @@
-// bb-plugin-claude-accounts — the host entry. Runs on the machine that runs a
+// bb-plugin-claude-profiles — the host entry. Runs on the machine that runs a
 // thread, so config dirs, token files, and transcripts are touched on the
 // right disk even for enrolled remote machines.
 import { chmod, copyFile, mkdir, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";

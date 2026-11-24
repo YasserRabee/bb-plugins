@@ -3,7 +3,7 @@ project, a personal one for another, and a switch per thread when you need it.
 
 ## What you get
 
-- **Settings → Claude accounts**: add accounts as a Claude config folder
+- **Settings → Claude profiles**: add accounts as a Claude config folder
   (`~/.claude-work`), a `claude setup-token` token, or both. Each one shows
   whether it is logged in on every machine.
 - **Defaults**: one for all projects, one per project.
@@ -13,7 +13,7 @@ project, a personal one for another, and a switch per thread when you need it.
   conversation, bb asks first, then copies the conversation to the new account
   so it continues where it left off.
 - **Thread Info**: shows each thread's account and where it came from.
-- `bb claude-accounts` commands for the same things.
+- `bb claude-profiles` commands for the same things.
 
 ## How it works
 

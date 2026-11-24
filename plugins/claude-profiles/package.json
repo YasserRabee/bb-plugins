@@ -1,13 +1,13 @@
 {
-  "name": "bb-plugin-claude-accounts",
-  "version": "0.2.2",
+  "name": "bb-plugin-claude-profiles",
+  "version": "0.3.0",
   "type": "module",
   "engines": {
     "bb": ">=0.48",
     "bbPluginSdk": ">=0.6.94"
   },
   "bb": {
-    "name": "Claude Accounts",
+    "name": "Claude Profiles",
     "description": "Use several Claude Code accounts: a default per project, an override per thread.",
     "branding": {
       "icon": "./icons/accounts.svg",
@@ -67,6 +67,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/YasserRabee/bb-plugins.git",
-    "directory": "plugins/claude-accounts"
+    "directory": "plugins/claude-profiles"
   }
 }

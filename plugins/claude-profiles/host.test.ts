@@ -8,7 +8,7 @@ import { checkProfile, ensureTokenWrapper, migrateTranscript } from "./host.ts";
 import { expandHome, normalizeApiKey, normalizeToken, slugify } from "./resolve.ts";
 
 test("migrateTranscript copies one session, never clobbering a newer copy", async () => {
-  const root = await mkdtemp(join(tmpdir(), "claude-accounts-"));
+  const root = await mkdtemp(join(tmpdir(), "claude-profiles-"));
   const from = join(root, "a");
   const to = join(root, "b");
   const slug = "-home-me-repo";
@@ -34,7 +34,7 @@ test("migrateTranscript copies one session, never clobbering a newer copy", asyn
 });
 
 test("token wrapper exports the token from a private file and runs claude", async () => {
-  const root = await mkdtemp(join(tmpdir(), "claude-accounts-"));
+  const root = await mkdtemp(join(tmpdir(), "claude-profiles-"));
   const { wrapperPath } = await ensureTokenWrapper(join(root, "data"), "work", "tok'en$1");
   const tokenFile = join(root, "data", "profiles", "work", "token");
   assert.equal((await stat(tokenFile)).mode & 0o777, 0o600);
@@ -52,7 +52,7 @@ test("token wrapper exports the token from a private file and runs claude", asyn
 });
 
 test("an API key wrapper exports ANTHROPIC_API_KEY and drops competing logins", async () => {
-  const root = await mkdtemp(join(tmpdir(), "claude-accounts-"));
+  const root = await mkdtemp(join(tmpdir(), "claude-profiles-"));
   const key = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz";
   const { wrapperPath } = await ensureTokenWrapper(join(root, "data"), "org", key);
   const bin = join(root, "bin");
@@ -74,7 +74,7 @@ test("an API key wrapper exports ANTHROPIC_API_KEY and drops competing logins", 
 });
 
 test("checkProfile reads a config dir's login", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "claude-accounts-"));
+  const dir = await mkdtemp(join(tmpdir(), "claude-profiles-"));
   assert.deepEqual(await checkProfile(dir), { configDir: dir, exists: true, loggedIn: false, email: null });
   await writeFile(join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "x" } }));
   await writeFile(join(dir, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "me@example.com" } }));

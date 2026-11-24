@@ -12,7 +12,7 @@ function setup() {
   const sessions = new Map<string, string>();
   const hostCalls: { method: string; input: any }[] = [];
   const { bb, harness } = createFakePluginHost({
-    pluginId: "claude-accounts",
+    pluginId: "claude-profiles",
     experimental_callHostRpc: ({ method, input }) => {
       hostCalls.push({ method, input });
       if (method === "describe") return { homeDir: "/home/me", defaultConfigDir: "/home/me/.claude" };

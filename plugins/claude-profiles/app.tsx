@@ -1,7 +1,7 @@
-// bb-plugin-claude-accounts — the Settings section (accounts and defaults),
+// bb-plugin-claude-profiles — the Settings section (accounts and defaults),
 // a "Claude account" thread menu with a consent dialog for started threads,
 // a Thread Info row, and an account picker in the new-thread composer. All
-// read over RPC and refetch on the server's "claude-accounts-changed" signal.
+// read over RPC and refetch on the server's "claude-profiles-changed" signal.
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
@@ -39,7 +39,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 
 // Must match server.ts (a value import would bundle the server).
-const ACCOUNTS_CHANGED = "claude-accounts-changed";
+const ACCOUNTS_CHANGED = "claude-profiles-changed";
 const SYSTEM_PROFILE = "system";
 const SYSTEM_LABEL = "Machine login";
 
@@ -146,13 +146,13 @@ function AccountSelect({
         )}
       >
         <span className="truncate">{current?.label}</span>
-        <Icon name="claude-accounts/chevron-down" className="size-3 shrink-0 opacity-60" />
+        <Icon name="claude-profiles/chevron-down" className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" mobileTitle={ariaLabel}>
         {options.map((option) => (
           <DropdownMenuItem key={option.id ?? ""} onSelect={() => onChange(option.id)}>
             <Icon
-              name="claude-accounts/check"
+              name="claude-profiles/check"
               className={cn("size-3.5", option === current ? "opacity-100" : "opacity-0")}
             />
             {option.label}
@@ -245,7 +245,7 @@ function ThreadAccountRow({ threadId }: ExperimentalThreadInfoProps) {
   if (choice === undefined || accounts === null) return null;
   if (accounts.profiles.length === 0 && choice.profileId === SYSTEM_PROFILE) return null;
   return (
-    <DetailRow label="Claude account" icon="claude-accounts/accounts">
+    <DetailRow label="Claude account" icon="claude-profiles/accounts">
       {labelOf(accounts, choice.profileId)}{" "}
       <span className="text-muted-foreground">({SOURCE_LABEL[choice.source]})</span>
     </DetailRow>
@@ -282,7 +282,7 @@ function NewThreadAccountPicker() {
   };
   return (
     <span className="inline-flex items-center gap-1">
-      <Icon name="claude-accounts/accounts" className="size-3.5 text-muted-foreground" />
+      <Icon name="claude-profiles/accounts" className="size-3.5 text-muted-foreground" />
       <AccountSelect
         ariaLabel="Claude account for this thread"
         accounts={accounts}
@@ -457,10 +457,10 @@ function ProfileRow({ profile, onEdit }: { profile: Profile; onEdit: () => void 
           {[profile.configDir, profile.hasToken ? (profile.apiKey ? "API key" : "token") : null].filter(Boolean).join(" + ")}
         </span>
         <IconAction tooltip="Check again" label={`Check ${profile.label} again`} onClick={check} disabled={checking}>
-          <Icon name="claude-accounts/refresh" className={cn("size-4", checking && "animate-spin")} />
+          <Icon name="claude-profiles/refresh" className={cn("size-4", checking && "animate-spin")} />
         </IconAction>
         <IconAction tooltip="Edit" label={`Edit ${profile.label}`} onClick={onEdit}>
-          <Icon name="claude-accounts/edit" className="size-4" />
+          <Icon name="claude-profiles/edit" className="size-4" />
         </IconAction>
         <IconAction
           tooltip="Delete"
@@ -571,7 +571,7 @@ function SettingsSection() {
 export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "accounts",
-    title: "Claude accounts",
+    title: "Claude profiles",
     description: "Claude Code accounts, and which one each project uses by default.",
     component: SettingsSection,
   });
@@ -584,7 +584,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadAction({
     id: "claude-account",
     title: "Claude account",
-    icon: "claude-accounts/accounts",
+    icon: "claude-profiles/accounts",
     group: experimental_THREAD_ACTION_GROUPS.settings,
     order: 100,
     useData: useThreadActionData,
@@ -596,7 +596,7 @@ export default definePluginApp((app) => {
       return {
         label: "Claude account",
         detail: current === null ? "Not started" : labelOf(accounts, current),
-        icon: "claude-accounts/accounts",
+        icon: "claude-profiles/accounts",
         choices: {
           items: options.map((option) => ({
             id: option.id,

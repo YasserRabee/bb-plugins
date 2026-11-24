@@ -16,8 +16,8 @@
       "source": "./plugins/marmalade"
     },
     {
-      "name": "claude-accounts",
-      "source": "./plugins/claude-accounts"
+      "name": "claude-profiles",
+      "source": "./plugins/claude-profiles"
     }
   ]
 }

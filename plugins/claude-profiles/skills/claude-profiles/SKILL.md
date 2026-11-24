@@ -1,9 +1,9 @@
 ---
-name: claude-accounts
-description: How the Claude Accounts plugin picks which Claude Code account (profile) a thread runs on, and the `bb claude-accounts` commands to add accounts, set project defaults, and switch a thread. Use when the user asks which Claude account a thread or project uses, wants to add or change one, or a thread hits another account's usage limit.
+name: claude-profiles
+description: How the Claude Profiles plugin picks which Claude Code account (profile) a thread runs on, and the `bb claude-profiles` commands to add accounts, set project defaults, and switch a thread. Use when the user asks which Claude account a thread or project uses, wants to add or change one, or a thread hits another account's usage limit.
 ---
 
-# Claude Accounts
+# Claude Profiles
 
 An account is a Claude Code profile with a `CLAUDE_CONFIG_DIR` on each
 machine that runs threads, a secret, or both. The secret is either a
@@ -24,16 +24,16 @@ Changing a default affects only threads started afterwards.
 ## Commands
 
 ```sh
-bb claude-accounts list [--json]
-bb claude-accounts add <label> --config-dir ~/.claude-work   # profile dir
-echo "$TOKEN" | bb claude-accounts add <label> --token-stdin # token (never as an argument)
-echo "$KEY" | bb claude-accounts add <label> --api-key-stdin  # Console API key, likewise
-bb claude-accounts add <label> --id <id> ...                 # update one
-bb claude-accounts check <id|system> [--json]                # login per machine
-bb claude-accounts default <id|system|none> [--project <project-id>]
-bb claude-accounts status [--thread <id>] [--json]
-bb claude-accounts use <id|system> [--thread <id>] [--confirm]
-bb claude-accounts remove <id>
+bb claude-profiles list [--json]
+bb claude-profiles add <label> --config-dir ~/.claude-work   # profile dir
+echo "$TOKEN" | bb claude-profiles add <label> --token-stdin # token (never as an argument)
+echo "$KEY" | bb claude-profiles add <label> --api-key-stdin  # Console API key, likewise
+bb claude-profiles add <label> --id <id> ...                 # update one
+bb claude-profiles check <id|system> [--json]                # login per machine
+bb claude-profiles default <id|system|none> [--project <project-id>]
+bb claude-profiles status [--thread <id>] [--json]
+bb claude-profiles use <id|system> [--thread <id>] [--confirm]
+bb claude-profiles remove <id>
 ```
 
 To log a config dir in, the user runs `CLAUDE_CONFIG_DIR=<dir> claude` and
