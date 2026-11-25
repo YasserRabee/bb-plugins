@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-marmalade",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "engines": {
     "bb": ">=0.47",
@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Marmalade",
-    "description": "A warm orange theme with always-visible 14px scrollbars, system UI and JetBrains Mono fonts, and roomier spacing.",
+    "description": "A Claude Code look-alike (clay accent, Claude greys) with always-visible 14px scrollbars, system UI and JetBrains Mono fonts, and roomier spacing.",
     "branding": {
       "icon": "Palette"
     },
@@ -20,7 +20,7 @@
       {
         "id": "marmalade",
         "name": "Marmalade",
-        "description": "Orange accent, persistent scrollbars, roomy layout.",
+        "description": "Claude Code colors, persistent scrollbars, roomy layout.",
         "css": "./themes/marmalade.css"
       }
     ]

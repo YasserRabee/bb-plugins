@@ -1,4 +1,5 @@
-/* Marmalade: orange accent, always-visible scrollbars, system UI + JetBrains
+/* Marmalade: Claude Code look (clay accent, neutral greys sampled from the
+   Claude Code desktop app), always-visible scrollbars, system UI + JetBrains
    Mono, roomier spacing. All values are hard-coded. */
 
 :root {
@@ -10,32 +11,57 @@ html { font-size: 106.667%; }
 
 :root,
 .light {
-  --primary: #f97316;
-  --primary-foreground: #1c1917;
-  --ring: #f97316;
-  --sidebar-primary: #f97316;
-  --sidebar-primary-foreground: #1c1917;
-  --sidebar-ring: #f97316;
-  --file-accent: #f97316;
+  /* Claude light: ivory canvas, slate ink, clay accent. */
+  --canvas: #faf9f5;
+  --ink: #141413;
+  --sidebar: #f5f4ed;
+  --primary: #d97757;
+  --primary-foreground: #ffffff;
+  --ring: #d97757;
+  --sidebar-primary: #d97757;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #d97757;
+  --file-accent: #c6613f;
+  --muted-foreground: #73726c;
+  --readback-foreground: #73726c;
+  --subtle-foreground: #8f8e88;
+  --success: #2bac3f;
+  --diff-added: #2bac3f;
+  --destructive: #e5243f;
+  --diff-removed: #e5243f;
+  --pr-merged: #8a63e0;
+  /* Claude Code highlights selected rows with a neutral fill, not the accent. */
+  --surface-selected: color-mix(in oklab, var(--ink) 9%, var(--canvas));
+  --surface-selected-border: transparent;
   --marmalade-thumb: color-mix(in oklab, var(--foreground) 28%, transparent);
   --marmalade-track: color-mix(in oklab, var(--foreground) 5%, transparent);
 }
 
 .dark {
-  --primary: #f97316;
-  --primary-foreground: #1c1917;
-  --ring: #f97316;
-  --sidebar-primary: #f97316;
-  --sidebar-primary-foreground: #1c1917;
-  --sidebar-ring: #f97316;
-  --file-accent: #f97316;
-  /* Sampled from the reference screenshot: background #131313 (reference was #191919, darkened), body text
-     #eeeeee, secondary text ("Received message from", "Ran 1 command") #c8c8c8. */
-  --canvas: #131313;
+  /* Sampled from a Claude Code desktop screenshot: content #191919, sidebar
+     #1f1f1f, body text #eeeeee, secondary text #9b9b9b, spinner clay #d97757,
+     +/- counts #32d74b / #ff2c56, MR icon #b796ff, selected row #404040. */
+  --canvas: #191919;
   --ink: #eeeeee;
-  --muted-foreground: #c8c8c8;
-  --readback-foreground: #c8c8c8;
-  --subtle-foreground: #c8c8c8;
+  --sidebar: #1f1f1f;
+  --primary: #d97757;
+  --primary-foreground: #ffffff;
+  --ring: #d97757;
+  --sidebar-primary: #d97757;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #d97757;
+  --file-accent: #d97757;
+  --muted-foreground: #9b9b9b;
+  --readback-foreground: #9b9b9b;
+  --subtle-foreground: #828282;
+  --success: #32d74b;
+  --diff-added: #32d74b;
+  --destructive: #ff2c56;
+  --destructive-text: #ff2c56;
+  --diff-removed: #ff2c56;
+  --pr-merged: #b796ff;
+  --surface-selected: #404040;
+  --surface-selected-border: transparent;
   --marmalade-thumb: color-mix(in oklab, var(--foreground) 32%, transparent);
   --marmalade-track: color-mix(in oklab, var(--foreground) 7%, transparent);
 }
@@ -81,6 +107,6 @@ html { font-size: 106.667%; }
 .thread-scrollbar[data-scrollbar-scrolling="true"]::-webkit-scrollbar-thumb:hover,
 .transient-scrollbar[data-scrollbar-scrolling="true"]::-webkit-scrollbar-thumb:hover,
 *::-webkit-scrollbar-thumb:active {
-  background-color: #f97316;
+  background-color: var(--primary);
   background-clip: padding-box;
 }
